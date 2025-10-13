@@ -114,9 +114,4 @@ The project is designed to be:
 
 ---
 
-## 🚀 Getting Started
 
-### 1️⃣ Clone this repository
-```bash
-git clone https://github.com/wiradp/web-scrape.git
-cd web-scrape
