@@ -1,0 +1,92 @@
+# ===================================
+# 🐍 Python & Virtual Environment
+# ===================================
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+*.pyo
+*.pyd
+*.pdb
+*.so
+
+# ===================================
+# 📘 Jupyter Notebook
+# ===================================
+.ipynb_checkpoints/
+.notebook/
+*.nbconvert.ipynb
+
+# ===================================
+# 💾 Data (jangan commit data asli)
+# ===================================
+data/raw/
+data/processed/
+data/database/
+!data/sample_*.csv
+
+# ===================================
+# 📊 Results & Logs
+# ===================================
+logs/
+results/
+*.log
+*.out
+*.err
+reports/
+
+# ===================================
+# ⚙️ Config & Environment
+# ===================================
+*.env
+config.yaml
+*.ini
+*.cfg
+*.toml
+
+# ===================================
+# 🧪 Testing
+# ===================================
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+nosetests.xml
+
+# ===================================
+# 🧰 Editors / IDE
+# ===================================
+.vscode/
+.idea/
+.spyproject/
+*.sublime-project
+*.sublime-workspace
+
+# ===================================
+# 💻 OS Files
+# ===================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===================================
+# 🧱 Build / Deployment
+# ===================================
+build/
+dist/
+*.egg-info/
+*.spec
+*.db
+*.sqlite3
+docker-compose.yml
+Dockerfile
+
+# ===================================
+# 🚀 Project-specific
+# ===================================
+notebooks_viraindo.csv
+notebooks/*.csv
