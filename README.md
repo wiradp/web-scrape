@@ -1,4 +1,4 @@
-# 💻 Laptop Market Analytics — End-to-End Data & AI Pipeline
+# 💻 Laptop Market Analytics — Automated Data Pipeline with Future AI Integration
 
 **Author:** [Wira Dhana Putra](https://wiradp.github.io)  
 **Status:** Public Preview (Active Development)  
