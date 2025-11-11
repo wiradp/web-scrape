@@ -1,117 +1,61 @@
-# 🧠 Web Scrape Laptop Analytics — End-to-End Data & AI Project
+# 💻 Laptop Market Analytics — End-to-End Data & AI Pipeline
 
 **Author:** [Wira Dhana Putra](https://wiradp.github.io)  
-**Live Portfolio Page:** [https://wiradp.github.io/web-scrape](https://wiradp.github.io/web-scrape)  
-**Status:** In Development (Public Preview)
+**Status:** Public Preview (Active Development)  
+**Live Demo:** _Coming Soon via Streamlit Cloud_
 
 ---
 
-## 🌐 Project Overview
+## 🌍 Overview
 
-This is an **end-to-end data project** that automatically scrapes laptop product data from an online marketplace ([viraindo.com](https://viraindo.com/notebook.html)), cleans and processes the data, extracts key product features (brand, processor, GPU, RAM, etc.), and then makes the data available through APIs and dashboards.
+This project is an **end-to-end data pipeline** that automatically collects and analyzes laptop product information from online marketplaces such as [Viraindo.com](https://viraindo.com/notebook.html).  
+The system extracts key specifications (brand, processor, GPU, RAM, storage, etc.), tracks price changes over time, and visualizes insights through an interactive dashboard.
 
-The project is designed to be:
-
-- **Automated** – runs scheduled web scraping and ETL jobs.
-- **Scalable** – supports large datasets (>10K products).
-- **Monitored** – detects changes in product price, stock, or new arrivals.
-- **AI-integrated** – includes semantic search, similarity matching, and anomaly detection.
-- **Public-accessible** – deployable as an interactive web app and API for portfolio demonstration.
+It is built to be:
+- ⚙️ **Automated** – one command runs scraping, data cleaning, and dashboard update.
+- 📈 **Scalable** – easily handles thousands of products and updates.
+- 🧠 **Insightful** – enables analytics, forecasting, and future AI-driven recommendations.
 
 ---
 
-## 🏗️ Project Architecture
+## 🏗️ Architecture
 
-            ┌────────────────────────────┐
-            │   Target Website (HTML)    │
-            └────────────┬───────────────┘
-                         │
-                         ▼
-                ┌───────────────────┐
-                │  Web Scraper      │
-                │ (Scrapy/Playwright) │
-                └─────────┬─────────┘
-                          │
-                          ▼
-                  ┌──────────────┐
-                  │ Raw Storage  │ (CSV / S3)
-                  └──────┬───────┘
-                         ▼
-                ┌──────────────────┐
-                │ ETL & Feature Eng │
-                │ (Python / Pandas) │
-                └────────┬─────────┘
-                         ▼
-             ┌───────────────────────────┐
-             │ Database / Data Warehouse │
-             │ (PostgreSQL / ClickHouse) │
-             └────────┬──────────────────┘
-                      ▼
-           ┌─────────────────────────────┐
-           │  FastAPI / RESTful API Layer │
-           └────────┬────────────────────┘
-                    ▼
-      ┌──────────────────────────────┐
-      │  Frontend (React + Tailwind) │
-      └──────────────────────────────┘
+
+- **scraper.py** → Fetches product names and raw prices from marketplace pages.  
+- **etl.py** → Cleans and enriches data with extracted columns such as:
+  - Brand (`brand`)
+  - Series (`series`)
+  - Processor details & category (`processor_detail`, `processor_category`)
+  - GPU & GPU category (`gpu`, `gpu_category`)
+  - RAM, storage, display size, and price normalization.  
+- **dashboard.py** → Visualizes and analyzes market trends interactively (via Streamlit).  
+- **Database** → Stores historical price and product updates for long-term insights.
 
 ---
 
-## ⚙️ Features
+## 🔍 Example Data (after ETL)
 
-### ✅ Core Features
-- Web scraping laptop product listings from online marketplace.  
-- Data cleaning, normalization, and feature extraction:
-  - Brand
-  - Processor details & category
-  - GPU & GPU category
-  - RAM capacity
-  - Storage capacity
-  - Display size
-- Automatic deduplication and timestamp tracking.
-- Price normalization and numeric conversion.
-
-### ⚡ Advanced / Scalable Features
-- Automated scheduling (Airflow / Prefect / cron jobs).
-- Continuous scraping & data refresh pipeline.
-- Monitoring dashboard (Grafana + Prometheus).
-- Alerts when:
-  - A new product appears.
-  - A product price changes significantly.
-  - Scraper fails or data anomaly detected.
-
-### 🤖 AI & Analytics Features
-- **Semantic product search** (embedding-based, similarity search).  
-- **Anomaly detection** for price fluctuation (e.g., Isolation Forest / Prophet).  
-- **Recommendation system** – “similar laptops” based on specs.  
-- **Price trend forecasting** using ML models.  
-- **Natural language insights**: “Find best value laptops under 6 million.”
+| raw_product_name | brand | series | processor_category | gpu_category | ram | storage | display | price_raw | 
+|---------------|--------|--------|--------------------|---------------|------|----------|----------|----------------|
+| ASUS Vivobook Go 14 E410KA | ASUS | Vivobook Go | Intel N-Series | Integrated | 4 GB | 256 GB SSD | 14" | 4.5 |
+| Lenovo LOQ 15AHP9 | Lenovo | LOQ | AMD Ryzen 7 | RTX 4050 | 16 GB | 512 GB SSD | 15.6" | 15.9 |
 
 ---
 
-## 🧩 Data Example (Post-Feature Engineering)
+## 📊 Key Features
 
-| Product_Name | Price | Brand | Processor_Detail | Processor_Category | GPU | GPU_Category | RAM | Storage | Display |
-|---------------|-------|--------|------------------|--------------------|-----|---------------|------|----------|----------|
-| ADVAN CHROMEBOOK N4020 4GB 32GB | 2800000 | ADVAN | Intel N4020 | Intel N-Series | Intel Graphics | Integrated | 4GB | 32GB | 11.6" |
-| ADVAN Soulmate N4020 4GB 128GB Win 11 | 2300000 | ADVAN | Intel N4020 | Intel N-Series | Intel Graphics | Integrated | 4GB | 128GB | 14" |
+### Core Pipeline
+✅ Automated web scraping and incremental updates  
+✅ Historical price tracking in database  
+✅ Feature engineering (brand, processor, GPU, RAM, storage, display)  
+✅ Streamlit dashboard for market visualization  
 
----
-
-## 🧮 Tech Stack
-
-| Layer | Technology | Description |
-|-------|-------------|-------------|
-| **Scraping** | Scrapy / Playwright | Data extraction & crawling |
-| **Data Processing** | Pandas / Python | Cleaning, feature extraction |
-| **Storage** | PostgreSQL / ClickHouse | Structured product & price history |
-| **API** | FastAPI | REST/GraphQL endpoints |
-| **Frontend** | React + Tailwind CSS | Interactive dashboard |
-| **AI / ML** | OpenAI Embeddings / Scikit-learn / Prophet | Semantic search & analytics |
-| **Monitoring** | Prometheus / Grafana | Metrics & alerting |
-| **Orchestration** | Airflow / Prefect | Task scheduling & automation |
-| **Deployment** | Docker / Cloud Run / GitHub Pages | Public hosting & scalability |
+### Future Enhancements
+🚀 **AI-powered insights** – "Find the best laptop under 8 million IDR"  
+🧩 **Semantic search** – similar product recommendation using embeddings  
+📉 **Price anomaly detection** – alert when a product price drops unusually  
+📆 **Trend forecasting** – using Prophet or ARIMA for future price predictions  
+🧱 **Migration to PostgreSQL / Cloud DB** – for larger-scale deployments  
+🌐 **API endpoint (FastAPI)** – expose analytics and product search via REST API  
 
 ---
-
-
