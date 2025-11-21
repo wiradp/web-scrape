@@ -113,7 +113,7 @@ def run_pipeline(run_dashboard: bool = False):
 if __name__ == "__main__":
     # --- Opsi: Jalankan dashboard setelah pipeline selesai ---
     # Ubah menjadi True jika kamu ingin sekaligus membuka dashboard
-    RUN_DASHBOARD_AFTER_PIPELINE = False
+    RUN_DASHBOARD_AFTER_PIPELINE = True
 
     # Jalankan pipeline
     run_pipeline(run_dashboard=RUN_DASHBOARD_AFTER_PIPELINE)

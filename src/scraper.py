@@ -89,9 +89,9 @@ def parse_listing_page(html: str, base_url: str) -> List[Dict]:
     
     return items
     
-def save_to_db(rows: List[Dict], db_path: str = 'data/database/laptop_data_raw.db'):
+def save_to_db(rows: List[Dict], db_path: str = 'data/database/raw/laptop_data_raw.db'):
     """
-    Menyimpan data yang dikumpulkan ke dalam basis data SQLite pada tabel `products_raw`.
+    Menyimpan data yang dikumpulkan ke dalam basis data SQLite pada tabel `product_raw`.
     Membuat tabel jika belum ada.
     Menggunakan executemany untuk penyisipan massal yang efisien.
     """
@@ -132,8 +132,8 @@ if __name__ == '__main__':
     if html:
         items = parse_listing_page(html, url)
         # Ganti save_to_csv dengan save_to_db
-        save_to_db(items, 'data/database/laptop_data_raw.db')
-        # save_to_csv(items, 'data/raw/notebooks_viraindo_scraped.csv')
+        save_to_db(items, 'data/database/raw/laptop_data_raw.db')
+        # save_to_csv(items, 'data/csv/notebooks_viraindo_scraped.csv')
         print(f"Scraping done. Total {len(items)} items.")
     else:
         print('Scraping failed')

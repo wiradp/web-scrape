@@ -18,26 +18,27 @@ env.bak/
 # 📘 Jupyter Notebook
 # ===================================
 .ipynb_checkpoints/
-.notebook/
 *.nbconvert.ipynb
 
 # ===================================
-# 💾 Data (jangan commit data asli)
+# 💾 Data (Ignore files, keep folder structure)
 # ===================================
-data/raw/
-data/processed/
-data/database/
-!data/sample_*.csv
+data/raw/**
+data/processed/**
+data/csv/**
+data/database/**
+
+# allow empty folder placeholders
+!data/**/.gitkeep
 
 # ===================================
 # 📊 Results & Logs
 # ===================================
-logs/
-results/
+results/**
+logs/**
 *.log
 *.out
 *.err
-reports/
 
 # ===================================
 # ⚙️ Config & Environment
@@ -90,3 +91,4 @@ Dockerfile
 # ===================================
 notebooks_viraindo.csv
 notebooks/*.csv
+notebooks/*.db

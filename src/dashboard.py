@@ -1,11 +1,11 @@
 # dashboard.py
 import streamlit as st
-import seaborn as sns
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 import os
 import sqlite3
 
@@ -36,28 +36,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Load data
-# Load data
 @st.cache_data
 def load_data():
     try:
-                
         # Path ke database yang dihasilkan oleh etl.py
-        project_root = '/home/wira/Documents/Project/web-scrape/data'
-        db_path = os.path.join(project_root, 'database', 'laptops.db') 
-        table_name = 'products_enriched' 
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        db_path = os.path.join(project_root, 'data', 'database', 'current', 'laptops_current.db')  # <-- Ganti ke database hasil ETL terbaru
+        table_name = 'products_current'  # <-- Ganti nama tabel ke products_current
         
-        # st.info(f"📂 Loading data from: {db_path}, table: {table_name}")
-        st.info(f"📂 Loading data from database: {db_path}, table: {table_name}")
-        
+        st.info(f"📂 Loading data from: {db_path}, table: {table_name}")
+        st.info(f"📁 Current working directory: {os.getcwd()}")
+        st.info(f"📁 Project root: {project_root}")
+        st.info(f"📁 Database exists: {os.path.exists(db_path)}")
+                
         if os.path.exists(db_path):
+            size_mb = os.path.getsize(db_path) / 1024 / 1024
+            st.info(f"📁 Database size: {size_mb:.2f} MB")
             # Baca dari database menggunakan pandas
             conn = sqlite3.connect(db_path)
             # Pastikan nama kolom sesuai dengan hasil ETL kamu
             # Kolom yang dibutuhkan oleh dashboard: brand, series, processor_detail, gpu, ram, storage, display, price_raw
-            # Sesuaikan dengan nama kolom di tabel products_enriched kamu
+            # Sesuaikan dengan nama kolom di tabel products_current kamu
             query = f"""
             SELECT 
-                raw_product_name AS product_name,
+                product_name AS product_name,
                 brand,
                 series,
                 processor_detail,
@@ -70,8 +72,8 @@ def load_data():
                 price_raw,
                 price_in_millions
             FROM {table_name}
-            WHERE valid_to IS NULL
-            ORDER BY id DESC
+            WHERE is_active = 1  -- Hanya ambil produk yang aktif
+            ORDER BY processed_at DESC
             """
             df = pd.read_sql_query(query, conn)
             conn.close()
@@ -84,7 +86,7 @@ def load_data():
             return df
         else:
             st.error(f"❌ Database file not found: {db_path}")
-            st.error("Make sure you have run the ETL process to generate 'laptops.db'.")
+            st.error("Make sure you have run the ETL process to generate 'laptops_current.db'.")
             return pd.DataFrame()
             
     except Exception as e:
@@ -100,9 +102,6 @@ if 'price_raw' in df.columns:
     df['price_raw'] = pd.to_numeric(df['price_raw'], errors='coerce')
     df = df[df['price_raw'].notna()]
     df = df[df['price_raw'] > 0]
-    
-    # Hitung ulang price_in_millions untuk konsistensi
-    # df['price_in_millions'] = df['price_raw'] / 1_000_000
     
     # Validasi price_in_millions
     df = df[df['price_in_millions'] > 0]
@@ -153,7 +152,6 @@ if not df.empty:
     selected_gpu = st.sidebar.selectbox("GPU Category:", gpu_categories)
 
     # Apply filters
-
     filtered_df = df.copy()  # Start from original df
 
     # Brand filter
@@ -190,7 +188,6 @@ if not df.empty:
                 x='brand',
                 y='price_in_millions',
                 color='brand',  # Color each brand differently
-                # title='Laptop Price Distribution by Brand',
                 labels={'price_in_millions': 'Price (in Millions)', 'brand': 'Brand'},
                 points='outliers',
                 height=500,
@@ -222,7 +219,7 @@ if not df.empty:
                 margin=dict(l=50, r=50, t=50, b=100)
             )
 
-            st.plotly_chart(fig_price, width='stretch')
+            st.plotly_chart(fig_price, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
 
             # Insight
             avg_price_by_brand = filtered_df.groupby('brand')['price_in_millions'].mean().sort_values(ascending=False)
@@ -268,7 +265,7 @@ if not df.empty:
                 fig_ram.update_traces(
                     hovertemplate="<b>RAM:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
                 )
-                st.plotly_chart(fig_ram, width='stretch')
+                st.plotly_chart(fig_ram, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
 
             with col2:
                 # Filter 'Unknown Storage'
@@ -300,7 +297,7 @@ if not df.empty:
                 fig_storage.update_traces(
                     hovertemplate="<b>Storage:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
                 )
-                st.plotly_chart(fig_storage, width='stretch')
+                st.plotly_chart(fig_storage, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
 
     with tab3:
         st.subheader("🔥 Processor vs GPU Category Distribution")
@@ -318,7 +315,6 @@ if not df.empty:
                     filtered_df_clean,
                     x='gpu_category',
                     y='processor_category',
-                    # title='Processor vs GPU Category Distribution',
                     labels={'gpu_category': 'GPU Category', 'processor_category': 'Processor Category'},
                     color_continuous_scale='Viridis',
                     text_auto=True,
@@ -332,7 +328,7 @@ if not df.empty:
                     yaxis=dict(automargin=True),  # Biarkan Plotly mengatur margin Y secara otomatis
                     xaxis=dict(automargin=True)   # Biarkan Plotly mengatur margin X secara otomatis
                 )
-                st.plotly_chart(fig_heatmap, width='stretch')
+                st.plotly_chart(fig_heatmap, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
 
                 # Insight
                 top_proc_gpu = filtered_df_clean.groupby(['processor_category', 'gpu_category']).size().idxmax()
@@ -346,11 +342,10 @@ if not df.empty:
                     x='count',
                     y=top_combos['processor_category'] + ' + ' + top_combos['gpu_category'],
                     orientation='h',
-                    # title='Top 10 Processor + GPU Combinations',
                     labels={'y': 'Processor + GPU', 'x': 'Count'}
                 )
                 fig_combo.update_layout(yaxis={'categoryorder': 'total ascending'})
-                st.plotly_chart(fig_combo, width='stretch')
+                st.plotly_chart(fig_combo, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
 
     with tab4:
         st.subheader("📋 Detailed Product List")
@@ -378,7 +373,7 @@ if not df.empty:
 
             st.dataframe(
                 display_df,
-                width='stretch', 
+                width='stretch',  # <-- Ganti width='stretch' ke width='stretch'
                 height=400
             )
 

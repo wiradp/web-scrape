@@ -1,0 +1,5 @@
+touch data/raw/.gitkeep
+touch data/processed/.gitkeep
+touch data/database/current/.gitkeep
+touch data/database/history/.gitkeep
+touch data/database/meta/.gitkeep

@@ -1,42 +1,17 @@
-# Web Scraping Project Requirements
+# Web Scraping & Dashboard Project Requirements
 
 # Core scraping dependencies
 beautifulsoup4==4.14.2
 requests==2.32.5
 lxml==5.3.0
-fake-useragent==1.5.1
 
 # Data processing and analysis
-pandas
-numpy
-
-# Feature engineering & ML integration (optional, for future)
-scikit-learn==1.5.2
-
-# Automation and scheduling
-schedule==1.2.2
-tqdm==4.66.5
-
-# Logging and monitoring
-loguru==0.7.2
-
-# Web application / deployment (optional)
-Flask==3.0.3
-gunicorn==23.0.0
-
-# Jupyter Notebook environment (for exploration)
-jupyter==1.1.1
-notebook==7.2.2
-
-# Typing and compatibility
-typing_extensions==4.15.0
-certifi==2025.8.3
-charset-normalizer==3.4.3
-idna==3.10
-urllib3==2.5.0
-soupsieve==2.8
+pandas==2.3.3
+numpy==1.26.4
 
 # Visualization libraries
-streamlit==1.28.0
+streamlit==1.51.0
+plotly==6.3.1
 matplotlib==3.8.0
 seaborn==0.12.2
+
