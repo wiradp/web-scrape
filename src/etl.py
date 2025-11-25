@@ -14,7 +14,7 @@ import pandas as pd
 from typing import Tuple, Dict, Any
 
 # -------------------------
-# Logging setup (rotating)
+# 1. Logging setup
 # -------------------------
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -32,14 +32,18 @@ if not logger.handlers:
     logger.addHandler(ch)
 
 # -------------------------
-# Utility helpers
+# 2. HELPER FUNCTIONS (Regex & Cleaning)
 # -------------------------
-def short_hash(s: str) -> str:
-    """Return a short deterministic hash for a string (useful for snapshotting)."""
-    return hashlib.sha1(s.encode("utf-8")).hexdigest()[:10]
-
 def ensure_dir_for_file(path: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
+
+def normalize_name(text):
+    """Membersihkan nama produk agar pencocokan lebih akurat."""
+    if not isinstance(text, str): return ""
+    # Kecilkan huruf, hapus spasi berlebih, hapus karakter aneh
+    text = text.lower().strip()
+    text = re.sub(r'\s+', ' ', text)
+    return text
 
 def get_brands():
     """
@@ -1840,123 +1844,214 @@ def extract_display(display_size):
     return 'Unknown'
 
 # -------------------------
-# ETL core logic
+# 3. CORE LOGIC: SCD TYPE 2
 # -------------------------
-def _create_meta_table(conn_meta_path: str):
-    """Create meta table etl_runs in a separate meta DB (so logs are persistent)."""
-    ensure_dir_for_file(conn_meta_path)
-    conn = sqlite3.connect(conn_meta_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS etl_runs (
-        run_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_timestamp DATETIME NOT NULL,
-        input_db_path TEXT,
-        rows_input INTEGER,
-        new_products INTEGER,
-        price_updates INTEGER,
-        moved_to_history INTEGER,
-        notes TEXT
-    );
-    """)
-    conn.commit()
-    conn.close()
+def apply_scd_type2(df_new: pd.DataFrame, current_db_path: str, history_db_path: str):
+    """
+    Logika Inti SCD Type 2:
+    1. Bandingkan Data Baru (df_new) vs Data Lama di DB (products_current).
+    2. Jika Produk Baru -> Insert.
+    3. Jika Harga Berubah -> Pindahkan lama ke History, Update Current.
+    4. Jika Produk Hilang -> Set is_active = 0.
+    """
+    ensure_dir_for_file(current_db_path)
+    ensure_dir_for_file(history_db_path)
 
-def _create_history_table(conn_history):
-    conn_history.execute("""
-        CREATE TABLE IF NOT EXISTS products_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            raw_id INTEGER NOT NULL,
-            product_name TEXT NOT NULL,
-            brand TEXT,
-            series TEXT,
-            processor_detail TEXT,
-            processor_category TEXT,
-            gpu TEXT,
-            gpu_category TEXT,
-            ram TEXT,
-            storage TEXT,
-            display TEXT,
-            price_raw INTEGER,
-            price_in_millions REAL,
-            processed_at DATETIME,
-            valid_from DATETIME,
-            valid_to DATETIME,
-            is_active BOOLEAN DEFAULT 0
-        );
-    """)
-
-def _create_current_table(conn_current):
-    conn_current.execute("""
+    conn_curr = sqlite3.connect(current_db_path)
+    conn_hist = sqlite3.connect(history_db_path)
+    cursor_curr = conn_curr.cursor()
+    cursor_hist = conn_hist.cursor()
+    
+    # --- A. INITIALIZE TABLES ---
+    cursor_curr.execute("""
         CREATE TABLE IF NOT EXISTS products_current (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            raw_id INTEGER NOT NULL UNIQUE,
-            product_name TEXT NOT NULL,
-            brand TEXT,
-            series TEXT,
-            processor_detail TEXT,
-            processor_category TEXT,
-            gpu TEXT,
-            gpu_category TEXT,
-            ram TEXT,
-            storage TEXT,
-            display TEXT,
+            product_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            raw_id INTEGER,
+            product_name TEXT UNIQUE,
+            brand TEXT, series TEXT,
+            processor_detail TEXT, processor_category TEXT,
+            gpu TEXT, gpu_category TEXT,
+            ram TEXT, storage TEXT, display TEXT,
             price_raw INTEGER,
             price_in_millions REAL,
-            processed_at DATETIME,
-            valid_from DATETIME,
-            valid_to DATETIME,
+            processed_at TIMESTAMP,
+            valid_from TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            valid_to TIMESTAMP,
             is_active BOOLEAN DEFAULT 1
         );
     """)
-
-def run_etl(
-    input_db_path: str = 'data/database/raw/laptop_data_raw.db',
-    current_output_db_path: str = 'data/database/current/laptops_current.db',
-    history_output_db_path: str = 'data/database/history/laptops_history.db',
-    meta_db_path: str = 'data/database/meta/laptops_meta.db'
-) -> Dict[str, Any]:
-    """
-    Run the ETL:
-    - Read product_raw from input_db_path
-    - Run feature extraction (brand, series, etc.)
-    - Detect new products, price updates, and removed products
-    - Move old versions to products_history and keep the latest in products_current
-    - Record an etl_runs entry into meta_db_path
-    """
-
-    logger.info("=== START ETL ===")
-    logger.info(f"Input DB: {input_db_path}")
-    logger.info(f"Current DB: {current_output_db_path}")
-    logger.info(f"History DB: {history_output_db_path}")
-    logger.info(f"Meta DB: {meta_db_path}")
-
-    # Validate paths
-    if not os.path.exists(input_db_path):
-        logger.error(f"Input DB not found: {input_db_path}")
-        return {"status": "error", "message": "input_db_missing"}
-
-    # Prepare meta DB and tables
-    _create_meta_table(meta_db_path)
-
-    # Read raw scraped table
+    
+    cursor_hist.execute("""
+        CREATE TABLE IF NOT EXISTS products_history (
+            history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT,
+            price_raw INTEGER,
+            price_in_millions REAL,
+            valid_from TIMESTAMP,
+            valid_to TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    
+    logger.info("🔍 Memulai Logika SCD Type 2...")
+    
+    # --- B. LOAD OLD DATA ---
     try:
-        conn_in = sqlite3.connect(input_db_path)
-        df_raw = pd.read_sql_query("SELECT id AS raw_id, product_name, price_raw, scraped_at FROM product_raw ORDER BY id ASC;", conn_in)
-        conn_in.close()
+        df_old = pd.read_sql("SELECT product_name, price_raw FROM products_current WHERE is_active = 1", conn_curr)
+        df_old['product_name'] = df_old['product_name'].apply(normalize_name)
+    except:
+        df_old = pd.DataFrame(columns=['product_name', 'price_raw'])
+    
+    # --- C. DEDUPLIKASI & MERGE ---
+    df_new['product_name_clean'] = df_new['product_name'].apply(normalize_name)
+    
+    # --- HITUNG DUPLIKAT DI SINI ---
+    initial_count = len(df_new)
+    df_new = df_new.drop_duplicates(subset=['product_name_clean'], keep='first')
+    final_count = len(df_new)
+    duplicates_removed = initial_count - final_count
+    
+    if duplicates_removed > 0:
+        logger.warning(f"⚠️ Dibuang {duplicates_removed} data duplikat dari Raw Data.")
+
+    merged = pd.merge(
+        df_new, 
+        df_old, 
+        left_on='product_name_clean',
+        right_on='product_name',
+        how='outer', 
+        suffixes=('_new', '_old'),
+        indicator=True
+    )
+    
+    # --- SKENARIO 1: PRODUK BARU (Left Only) ---
+    new_products_df = merged[merged['_merge'] == 'left_only'].copy()
+    if not new_products_df.empty:
+        count = len(new_products_df)
+        logger.info(f"✨ Menambahkan {count} produk baru...")
+        
+        cols_map = {
+            'raw_id': 'raw_id', 
+            'product_name_new': 'product_name', 
+            'brand': 'brand', 'series': 'series',
+            'processor_detail': 'processor_detail', 'processor_category': 'processor_category',
+            'gpu': 'gpu', 'gpu_category': 'gpu_category',
+            'ram': 'ram', 'storage': 'storage', 'display': 'display',
+            'price_raw_new': 'price_raw',
+            'price_in_millions': 'price_in_millions',
+            'processed_at': 'processed_at'
+        }
+        
+        to_insert = new_products_df.rename(columns=cols_map)[list(cols_map.values())]
+        
+        # --- FIX: Deduplikasi lagi sebelum insert untuk keamanan ekstra ---
+        to_insert = to_insert.drop_duplicates(subset=['product_name'], keep='first')
+        # ----------------------------------------------------------------
+        
+        to_insert['is_active'] = 1
+        to_insert['valid_from'] = datetime.now()
+        to_insert['valid_to'] = None
+        
+        to_insert.to_sql('products_current', conn_curr, if_exists='append', index=False)
+        
+    # --- SKENARIO 2: HARGA BERUBAH (Both & Price Differs) ---
+    existing = merged[merged['_merge'] == 'both'].copy()
+    existing['price_raw_new'] = existing['price_raw_new'].fillna(0).astype(int)
+    existing['price_raw_old'] = existing['price_raw_old'].fillna(0).astype(int)
+    
+    price_changes = existing[existing['price_raw_new'] != existing['price_raw_old']]
+    
+    if not price_changes.empty:
+        count = len(price_changes)
+        logger.info(f"📉 Mendeteksi {count} perubahan harga...")
+        
+        for _, row in price_changes.iterrows():
+            p_name_clean = row['product_name_clean'] 
+            old_price = row['price_raw_old']
+            new_price = row['price_raw_new']
+            new_price_millions = row['price_in_millions']
+            
+            cursor_curr.execute("SELECT valid_from, product_name FROM products_current WHERE product_name = ?", (p_name_clean,))
+            result = cursor_curr.fetchone()
+            original_valid_from = result[0] if result else datetime.now()
+            original_name_db = result[1] if result else p_name_clean
+
+            cursor_hist.execute("""
+                INSERT INTO products_history (product_name, price_raw, price_in_millions, valid_from, valid_to)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (original_name_db, int(old_price), float(old_price)/1_000_000, original_valid_from))
+            
+            cursor_curr.execute("""
+                UPDATE products_current
+                SET price_raw = ?,
+                    price_in_millions = ?,
+                    valid_from = CURRENT_TIMESTAMP,
+                    processed_at = CURRENT_TIMESTAMP
+                WHERE product_name = ?
+            """, (int(new_price), float(new_price_millions), original_name_db))
+            
+    # --- SKENARIO 3: PRODUK HILANG (Right Only) ---
+    discontinued = merged[merged['_merge'] == 'right_only'].copy()
+    if not discontinued.empty:
+        count = len(discontinued)
+        logger.info(f"❌ Menandai {count} produk sebagai tidak aktif (Out of Stock)...")
+        for _, row in discontinued.iterrows():
+            cursor_curr.execute("UPDATE products_current SET is_active = 0 WHERE product_name = ?", (row['product_name'],))
+
+    conn_curr.commit()
+    conn_hist.commit()
+    conn_curr.close()
+    conn_hist.close()
+    
+    logger.info("✅ Proses SCD Type 2 Selesai.")
+    return {
+        "new_products": len(new_products_df),
+        "price_updates": len(price_changes),
+        "discontinued": len(discontinued),
+        "duplicates_removed": duplicates_removed
+    }
+
+# -------------------------
+# 4. MAIN PIPELINE
+# -------------------------
+def run_etl_pipeline():
+    """
+    Fungsi Utama:
+    1. Baca Raw Data (Snapshot).
+    2. Feature Extraction (Transform).
+    3. Simpan ke DB dengan logika SCD (Load).
+    """
+    input_db = "data/database/raw/laptops_data_raw.db"
+    current_db = "data/database/current/laptops_current.db"
+    history_db = "data/database/history/laptops_history.db"
+    
+    logger.info("=== START ETL PIPELINE ===")
+    
+    # 1. READ RAW DATA
+    if not os.path.exists(input_db):
+        logger.error("Database Raw tidak ditemukan!")
+        return
+    
+    conn_raw = sqlite3.connect(input_db)
+    try:
+        df = pd.read_sql("SELECT * FROM products_raw", conn_raw)
     except Exception as e:
-        logger.exception("Failed to read input DB")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Gagal membaca raw table: {e}")
+        return
+    finally:
+        conn_raw.close()
+        
+    if df.empty:
+        logger.warning("Data Raw Kosong. ETL Berhenti.")
+        return
 
-    logger.info(f"Rows read from product_raw: {len(df_raw)}")
-    if df_raw.empty:
-        logger.warning("No rows in input DB. Exiting ETL.")
-        return {"status": "ok", "rows_input": 0, "message": "no_data"}
+    logger.info(f"📥 Berhasil membaca {len(df)} baris data raw.")
 
-    # Run feature extraction
-    logger.info("Running feature extraction...")
+    # 2. TRANSFORM (FEATURE EXTRACTION)
+    logger.info("🛠️ Menjalankan Feature Extraction...")
+    
     brand_list = get_brands()
-    df = df_raw.copy()
+    
+    # Terapkan semua fungsi ekstraksi di sini
     df['brand'] = df['product_name'].apply(lambda x: extract_brand(x, brand_list))
     df['series'] = df['product_name'].apply(extract_series)
     df['processor_detail'] = df['product_name'].apply(extract_processor)
@@ -1966,241 +2061,18 @@ def run_etl(
     df['ram'] = df['product_name'].apply(extract_ram)
     df['storage'] = df['product_name'].apply(extract_storage)
     df['display'] = df['product_name'].apply(extract_display)
+    
+    # Hitung harga juta
     df['price_in_millions'] = df['price_raw'] / 1_000_000
     df['processed_at'] = datetime.now()
-    df['valid_from'] = datetime.now()
-    df['valid_to'] = None
-    df['is_active'] = 1
+    
+    # PENTING: Normalisasi nama untuk kunci pencocokan di SCD
+    df['product_name_clean'] = df['product_name'].apply(normalize_name)
+    
+    # 3. LOAD (SCD TYPE 2)
+    stats = apply_scd_type2(df, current_db, history_db)
+    
+    logger.info(f"=== ETL SELESAI. Stats: {stats} ===")
 
-    # Snapshot hash for quick equality test
-    df['snapshot_hash'] = (df['product_name'].astype(str) + "|" + df['price_raw'].astype(str)).apply(short_hash)
-
-    # Ensure DB folders exist
-    ensure_dir_for_file(current_output_db_path)
-    ensure_dir_for_file(history_output_db_path)
-    ensure_dir_for_file(meta_db_path)
-
-    # Open connections
-    conn_current = sqlite3.connect(current_output_db_path)
-    conn_history = sqlite3.connect(history_output_db_path)
-    conn_meta = sqlite3.connect(meta_db_path)
-
-    # Create tables if needed
-    _create_current_table(conn_current)
-    _create_history_table(conn_history)
-
-    # Load existing current data if any
-    try:
-        existing_df = pd.read_sql_query("SELECT * FROM products_current;", conn_current)
-    except Exception:
-        existing_df = pd.DataFrame(columns=[
-            'id','raw_id','product_name','brand','series','processor_detail','processor_category',
-            'gpu','gpu_category','ram','storage','display','price_raw','price_in_millions',
-            'processed_at','valid_from','valid_to','is_active'
-        ])
-
-    # Normalize types
-    existing_df['raw_id'] = pd.to_numeric(existing_df.get('raw_id', pd.Series(dtype='int64')), errors='coerce')
-
-    # Maps
-    existing_map = {}
-    if not existing_df.empty:
-        for _, r in existing_df.iterrows():
-            existing_map[int(r['raw_id'])] = r.to_dict()
-
-    # Stats
-    new_products = 0
-    price_updates = 0
-    moved_to_history = 0
-
-    # Begin transaction
-    cur_current = conn_current.cursor()
-    cur_history = conn_history.cursor()
-
-    try:
-        # 1) Handle price updates and new products
-        for _, row in df.iterrows():
-            raw_id = int(row['raw_id'])
-            row_hash = row['snapshot_hash']
-            row_dict = row.to_dict()
-
-            if raw_id not in existing_map:
-                # NEW product -> insert to current (append)
-                cur_current.execute("""
-                    INSERT OR REPLACE INTO products_current (
-                        raw_id, product_name, brand, series, processor_detail, processor_category,
-                        gpu, gpu_category, ram, storage, display, price_raw, price_in_millions,
-                        processed_at, valid_from, valid_to, is_active
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """, (
-                    raw_id, row['product_name'], row['brand'], row['series'], row['processor_detail'], row['processor_category'],
-                    row['gpu'], row['gpu_category'], row['ram'], row['storage'], row['display'],
-                    int(row['price_raw']), float(row['price_in_millions']),
-                    row['processed_at'], row['valid_from'], None, 1
-                ))
-                new_products += 1
-            else:
-                # EXISTS -> compare snapshot (product_name + price)
-                existing = existing_map[raw_id]
-                existing_hash = short_hash(str(existing.get('product_name', '')) + "|" + str(existing.get('price_raw', '')))
-                if existing_hash != row_hash:
-                    # Something changed (likely price or name) -> move existing to history and upsert current
-                    moved_to_history += 1
-                    # Set valid_to for existing record and mark inactive
-                    valid_to_ts = datetime.now()
-                    cur_current.execute("""
-                        UPDATE products_current
-                        SET valid_to = ?, is_active = 0
-                        WHERE raw_id = ?
-                    """, (valid_to_ts, raw_id))
-
-                    # Insert the existing record into products_history (preserve old values)
-                    cur_history.execute("""
-                        INSERT INTO products_history (
-                            raw_id, product_name, brand, series, processor_detail, processor_category,
-                            gpu, gpu_category, ram, storage, display, price_raw, price_in_millions,
-                            processed_at, valid_from, valid_to, is_active
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                    """, (
-                        raw_id,
-                        existing.get('product_name'),
-                        existing.get('brand'),
-                        existing.get('series'),
-                        existing.get('processor_detail'),
-                        existing.get('processor_category'),
-                        existing.get('gpu'),
-                        existing.get('gpu_category'),
-                        existing.get('ram'),
-                        existing.get('storage'),
-                        existing.get('display'),
-                        existing.get('price_raw'),
-                        existing.get('price_in_millions'),
-                        existing.get('processed_at'),
-                        existing.get('valid_from'),
-                        valid_to_ts,
-                        0
-                    ))
-
-                    # Insert the new version into products_current (as active)
-                    cur_current.execute("""
-                        INSERT OR REPLACE INTO products_current (
-                            raw_id, product_name, brand, series, processor_detail, processor_category,
-                            gpu, gpu_category, ram, storage, display, price_raw, price_in_millions,
-                            processed_at, valid_from, valid_to, is_active
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                    """, (
-                        raw_id, row['product_name'], row['brand'], row['series'], row['processor_detail'], row['processor_category'],
-                        row['gpu'], row['gpu_category'], row['ram'], row['storage'], row['display'],
-                        int(row['price_raw']), float(row['price_in_millions']),
-                        row['processed_at'], row['valid_from'], None, 1
-                    ))
-
-                    # Count as price update if price differs
-                    try:
-                        if int(existing.get('price_raw', 0)) != int(row['price_raw']):
-                            price_updates += 1
-                    except Exception:
-                        price_updates += 1
-                else:
-                    # No change -> do nothing (keep existing)
-                    pass
-
-        # 2) Detect products that were in existing current but are NOT in new df -> mark as inactive and move to history
-        new_raw_ids = set(df['raw_id'].astype(int).tolist())
-        old_raw_ids = set(existing_map.keys())
-
-        to_deactivate = old_raw_ids - new_raw_ids
-        if to_deactivate:
-            for rid in to_deactivate:
-                # fetch existing row (we have it in existing_map)
-                existing = existing_map[rid]
-                valid_to_ts = datetime.now()
-                cur_current.execute("""
-                    UPDATE products_current
-                    SET valid_to = ?, is_active = 0
-                    WHERE raw_id = ?
-                """, (valid_to_ts, rid))
-
-                cur_history.execute("""
-                    INSERT INTO products_history (
-                        raw_id, product_name, brand, series, processor_detail, processor_category,
-                        gpu, gpu_category, ram, storage, display, price_raw, price_in_millions,
-                        processed_at, valid_from, valid_to, is_active
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """, (
-                    rid,
-                    existing.get('product_name'),
-                    existing.get('brand'),
-                    existing.get('series'),
-                    existing.get('processor_detail'),
-                    existing.get('processor_category'),
-                    existing.get('gpu'),
-                    existing.get('gpu_category'),
-                    existing.get('ram'),
-                    existing.get('storage'),
-                    existing.get('display'),
-                    existing.get('price_raw'),
-                    existing.get('price_in_millions'),
-                    existing.get('processed_at'),
-                    existing.get('valid_from'),
-                    valid_to_ts,
-                    0
-                ))
-                moved_to_history += 1
-
-        # Commit DBs
-        conn_current.commit()
-        conn_history.commit()
-
-        # 3) (Optional) Clean duplicates in products_current - ensure one active row per raw_id
-        # Not strictly necessary since raw_id is UNIQUE in table schema (we used INSERT OR REPLACE)
-    except Exception as e:
-        logger.exception("Error during transactional ETL updates")
-        conn_current.rollback()
-        conn_history.rollback()
-        conn_current.close()
-        conn_history.close()
-        conn_meta.close()
-        return {"status": "error", "message": str(e)}
-
-    # Record ETL run meta
-    try:
-        runs_cursor = conn_meta.cursor()
-        rows_input = len(df)
-        runs_cursor.execute("""
-            INSERT INTO etl_runs (run_timestamp, input_db_path, rows_input, new_products, price_updates, moved_to_history, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (datetime.now(), input_db_path, rows_input, new_products, price_updates, moved_to_history, "automated run"))
-        conn_meta.commit()
-    except Exception as e:
-        logger.exception("Failed to write etl_runs meta")
-
-    # Close connections
-    conn_current.close()
-    conn_history.close()
-    conn_meta.close()
-
-    stats = {
-        "status": "ok",
-        "rows_input": len(df),
-        "new_products": new_products,
-        "price_updates": price_updates,
-        "moved_to_history": moved_to_history
-    }
-
-    logger.info("=== ETL COMPLETE ===")
-    logger.info(f"Stats: {stats}")
-    return stats
-
-# -------------------------
-# Entry point
-# -------------------------
 if __name__ == "__main__":
-    # Paths (adjust if needed)
-    input_db = "data/database/raw/laptop_data_raw.db"
-    current_db = "data/database/current/laptops_current.db"
-    history_db = "data/database/history/laptops_history.db"
-    meta_db = "data/database/meta/laptops_meta.db"
-
-    res = run_etl(input_db, current_db, history_db, meta_db)
-    print(res)
+    run_etl_pipeline()

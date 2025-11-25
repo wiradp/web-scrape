@@ -21,12 +21,15 @@ env.bak/
 *.nbconvert.ipynb
 
 # ===================================
-# 💾 Data (Ignore files, keep folder structure)
+# 💾 Data (Ignore content, keep folder structure)
 # ===================================
-data/raw/**
-data/processed/**
-data/csv/**
-data/database/**
+data/raw/*
+data/processed/*
+data/csv/*
+data/database/*
+data/database/current/*
+data/database/history/*
+data/database/raw/*
 
 # allow empty folder placeholders
 !data/**/.gitkeep
@@ -34,20 +37,22 @@ data/database/**
 # ===================================
 # 📊 Results & Logs
 # ===================================
-results/**
-logs/**
+results/*
+logs/*
 *.log
 *.out
 *.err
 
 # ===================================
-# ⚙️ Config & Environment
+# ⚙️ Config, Environment, & Secrets
 # ===================================
 *.env
 config.yaml
 *.ini
 *.cfg
-*.toml
+
+# Streamlit secrets file (SANGAT PENTING TIDAK TERUNGGAH)
+.streamlit/secrets.toml
 
 # ===================================
 # 🧪 Testing
@@ -75,20 +80,23 @@ Thumbs.db
 desktop.ini
 
 # ===================================
-# 🧱 Build / Deployment
+# 🧱 Deployment Artifacts (Hanya abaikan hasil build)
 # ===================================
 build/
 dist/
 *.egg-info/
 *.spec
-*.db
-*.sqlite3
-docker-compose.yml
-Dockerfile
 
 # ===================================
-# 🚀 Project-specific
+# 🚀 Project-specific (Tambahkan ignore file DB spesifik)
 # ===================================
-notebooks_viraindo.csv
-notebooks/*.csv
-notebooks/*.db
+# Ignore file DB yang spesifik yang tidak tercakup di atas
+*.db
+*.sqlite3
+
+# Ignore notebook hasil running
+notebooks/*.ipynb
+!notebooks/dashboard.ipynb
+!notebooks/eda.ipynb
+!notebooks/etl.ipynb
+!notebooks/scraper.ipynb

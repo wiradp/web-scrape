@@ -1,13 +1,14 @@
 # dashboard.py
 import streamlit as st
 import pandas as pd
+from supabase import create_client
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
-import sqlite3
+
 
 # Set page config
 st.set_page_config(
@@ -35,82 +36,77 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Load data
-@st.cache_data
-def load_data():
+# --- INISIALISASI KONEKSI SUPABASE ---
+@st.cache_resource
+def init_connection():
     try:
-        # Path ke database yang dihasilkan oleh etl.py
-        project_root = os.path.dirname(os.path.dirname(__file__))
-        db_path = os.path.join(project_root, 'data', 'database', 'current', 'laptops_current.db')  # <-- Ganti ke database hasil ETL terbaru
-        table_name = 'products_current'  # <-- Ganti nama tabel ke products_current
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
         
-        st.info(f"📂 Loading data from: {db_path}, table: {table_name}")
-        st.info(f"📁 Current working directory: {os.getcwd()}")
-        st.info(f"📁 Project root: {project_root}")
-        st.info(f"📁 Database exists: {os.path.exists(db_path)}")
-                
-        if os.path.exists(db_path):
-            size_mb = os.path.getsize(db_path) / 1024 / 1024
-            st.info(f"📁 Database size: {size_mb:.2f} MB")
-            # Baca dari database menggunakan pandas
-            conn = sqlite3.connect(db_path)
-            # Pastikan nama kolom sesuai dengan hasil ETL kamu
-            # Kolom yang dibutuhkan oleh dashboard: brand, series, processor_detail, gpu, ram, storage, display, price_raw
-            # Sesuaikan dengan nama kolom di tabel products_current kamu
-            query = f"""
-            SELECT 
-                product_name AS product_name,
-                brand,
-                series,
-                processor_detail,
-                processor_category,
-                gpu,
-                gpu_category,
-                ram,
-                storage,
-                display,
-                price_raw,
-                price_in_millions
-            FROM {table_name}
-            WHERE is_active = 1  -- Hanya ambil produk yang aktif
-            ORDER BY processed_at DESC
-            """
-            df = pd.read_sql_query(query, conn)
-            conn.close()
-
-            # Hitung ulang price_in_millions jika belum ada di tabel
-            if 'price_in_millions' not in df.columns:
-                df['price_in_millions'] = df['price_raw'] / 1_000_000
-            
-            st.success(f"✅ Data loaded successfully from database! ({len(df)} products)")
-            return df
-        else:
-            st.error(f"❌ Database file not found: {db_path}")
-            st.error("Make sure you have run the ETL process to generate 'laptops_current.db'.")
-            return pd.DataFrame()
-            
+        return create_client(supabase_url=url, supabase_key=key)
+    
     except Exception as e:
-        st.error(f"❌ Error loading data from database: {e}")
-        return pd.DataFrame()
+        st.error(f"Failed to connect to Supabase:: {e}. Ensure that secrets are set.")
+        return None
 
-# Load the data
+supabase = init_connection()
+
+# --- LOAD DATA DARI SUPABASE ---
+@st.cache_data(ttl=600) # Cache data selama 10 menit
+def load_data():
+    if supabase is None:
+        return pd.DataFrame() # Keluar jika koneksi gagal
+    
+    st.info("☁️ Loading data from Supabase...")
+    
+    try:
+        # Mengambil data dari tabel 'laptops_current' di Supabase
+        # Pastikan setting 'Max Rows' di Supabase API Settings sudah > 64000
+        response = supabase.table('products_current').select('*').eq('is_active', True).execute()
+        
+        # Supabase client mengembalikan dictionary, kita ubah ke DataFrame
+        df = pd.DataFrame(response.data)
+
+        # --- Pembersihan dan Konversi Tipe Data (Penting) ---
+        # Supabase mengembalikan semuanya sebagai string, kita konversi tipe numerik
+        if not df.empty:
+            df['price_in_millions'] = pd.to_numeric(df['price_in_millions'], errors='coerce')
+            # Konversi kolom tanggal ke format datetime
+            df['valid_from'] = pd.to_datetime(df['valid_from'], errors='coerce')
+            
+        # st.success(f"✅ Loaded successfully {len(df)} data rows from Supabase.")
+        return df
+        
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame() # Return empty DF biar gak crash
+
+# Masukkan objek supabase yang sudah diinisialisasi sebagai argumen
 df = load_data()
 
-# Bersihkan dan validasi data harga
-if 'price_raw' in df.columns:
-    # Convert dan bersihkan price_raw
-    df['price_raw'] = pd.to_numeric(df['price_raw'], errors='coerce')
-    df = df[df['price_raw'].notna()]
-    df = df[df['price_raw'] > 0]
+# Cek apakah data berhasil dimuat
+if df.empty:
+    st.warning("Data is missing or failed to load. Check the logs above")
+    st.stop()
+
+# --- Bersihkan dan validasi kolom harga final (price_in_millions) ---
+# Kita tidak perlu memproses price_raw lagi, karena ini data bersih dari ETL
     
-    # Validasi price_in_millions
+if 'price_in_millions' in df.columns:
+    # 1. Pastikan nilai adalah numerik dan bukan NaN
+    df['price_in_millions'] = pd.to_numeric(df['price_in_millions'], errors='coerce')
+    df = df[df['price_in_millions'].notna()]
+    
+    # 2. Filter harga yang masuk akal (> 0 dan < 150 juta)
     df = df[df['price_in_millions'] > 0]
     df = df[df['price_in_millions'] < 150]  # Filter harga yang masuk akal (< 150 juta)
     
-    # Remove duplicates dan sort
-    df = df.drop_duplicates().sort_values('price_in_millions')
+    # 3. Remove duplicates dan sort
+    df = df.drop_duplicates(subset=['product_name', 'brand']).sort_values('price_in_millions')
+
 else:
-    st.error("Kolom price_raw tidak ditemukan dalam dataset")
+    st.error("Kolom price_in_millions tidak ditemukan dalam dataset")
+    st.stop() # Hentikan eksekusi jika kolom utama harga hilang
 
 # Main title with styling
 st.title("🔍 Indonesian Laptop Market Analysis Dashboard")
@@ -219,7 +215,7 @@ if not df.empty:
                 margin=dict(l=50, r=50, t=50, b=100)
             )
 
-            st.plotly_chart(fig_price, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
+            st.plotly_chart(fig_price, width='stretch')  
 
             # Insight
             avg_price_by_brand = filtered_df.groupby('brand')['price_in_millions'].mean().sort_values(ascending=False)
@@ -265,7 +261,7 @@ if not df.empty:
                 fig_ram.update_traces(
                     hovertemplate="<b>RAM:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
                 )
-                st.plotly_chart(fig_ram, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
+                st.plotly_chart(fig_ram, width='stretch')  
 
             with col2:
                 # Filter 'Unknown Storage'
@@ -297,7 +293,7 @@ if not df.empty:
                 fig_storage.update_traces(
                     hovertemplate="<b>Storage:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>"
                 )
-                st.plotly_chart(fig_storage, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
+                st.plotly_chart(fig_storage, width='stretch') 
 
     with tab3:
         st.subheader("🔥 Processor vs GPU Category Distribution")
@@ -328,7 +324,7 @@ if not df.empty:
                     yaxis=dict(automargin=True),  # Biarkan Plotly mengatur margin Y secara otomatis
                     xaxis=dict(automargin=True)   # Biarkan Plotly mengatur margin X secara otomatis
                 )
-                st.plotly_chart(fig_heatmap, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
+                st.plotly_chart(fig_heatmap, width='stretch') 
 
                 # Insight
                 top_proc_gpu = filtered_df_clean.groupby(['processor_category', 'gpu_category']).size().idxmax()
@@ -345,18 +341,66 @@ if not df.empty:
                     labels={'y': 'Processor + GPU', 'x': 'Count'}
                 )
                 fig_combo.update_layout(yaxis={'categoryorder': 'total ascending'})
-                st.plotly_chart(fig_combo, width='stretch')  # <-- Ganti width='stretch' ke width='stretch'
+                st.plotly_chart(fig_combo, width='stretch') 
 
     with tab4:
         st.subheader("📋 Detailed Product List")
-        st.markdown("*Scroll horizontally to see all columns*")
+        st.markdown("*Scroll horizontally to see all columns. Pagination is applied below.*")
 
         if filtered_df.empty:
             st.warning("No data available for the selected filters.")
         else:
-            filtered_df['price'] = filtered_df['price_in_millions'].apply(lambda x: f"{x:,.2f}M")
+            # --- LOGIKA PAGINATION ---
+            total_rows = len(filtered_df)
+            
+            # Pengaturan Baris per Halaman (Ditempatkan di dalam Tab 4)
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("Display Settings")
+            rows_per_page = st.sidebar.number_input(
+                "Products per Page",
+                min_value=10,
+                max_value=1000,
+                value=25,
+                step=50,
+                key='rows_per_page'
+            )
 
-            display_df = filtered_df[[
+            # Hitung jumlah halaman
+            total_pages = int(np.ceil(total_rows / rows_per_page))
+            
+            # Pastikan current_page ada di session_state
+            if 'page' not in st.session_state or st.session_state.page > total_pages:
+                 st.session_state.page = 1
+            
+            # Kontrol navigasi halaman (diletakkan di bagian utama)
+            col_info, col_nav = st.columns([3, 2])
+
+            with col_nav:
+                current_page = st.number_input(
+                    f"Page (of {total_pages})",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=st.session_state.page,
+                    step=1,
+                    key='page_number'
+                )
+                st.session_state.page = current_page
+
+            # Hitung index data yang akan ditampilkan
+            start_row = (current_page - 1) * rows_per_page
+            end_row = start_row + rows_per_page
+
+            # Dataframe yang ditampilkan hanya sebagian
+            display_df_raw = filtered_df.iloc[start_row:end_row].copy()
+            
+            with col_info:
+                st.info(f"Showing **{len(display_df_raw)}** of a total of **{total_rows}** filtered data rows (Page {current_page} of {total_pages}).")
+
+
+            # --- FORMATTING TAMPILAN DATAFRAME ---
+            display_df_raw['price'] = display_df_raw['price_in_millions'].apply(lambda x: f"{x:,.2f}M")
+
+            display_df = display_df_raw[[
                 'product_name', 'brand', 'series', 'processor_detail', 'gpu', 'ram', 
                 'storage', 'display', 'price'
             ]].rename(columns={
@@ -371,9 +415,10 @@ if not df.empty:
                 'price': 'Price (Rp)'
             })
 
+            # Tampilkan hanya data yang sudah dipaginasi
             st.dataframe(
                 display_df,
-                width='stretch',  # <-- Ganti width='stretch' ke width='stretch'
+                width='stretch',
                 height=400
             )
 

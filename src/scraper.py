@@ -3,10 +3,11 @@ Contains a polite scraping function with retries, user-agent rotation, and savin
 """
 import requests
 from bs4 import BeautifulSoup
-import time, random, csv, hashlib, logging, re
+import time, random, logging, re
 from typing import List, Dict, Optional
 from urllib.parse import urljoin
 import sqlite3
+import os
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -88,53 +89,63 @@ def parse_listing_page(html: str, base_url: str) -> List[Dict]:
             continue
     
     return items
-    
-def save_to_db(rows: List[Dict], db_path: str = 'data/database/raw/laptop_data_raw.db'):
-    """
-    Menyimpan data yang dikumpulkan ke dalam basis data SQLite pada tabel `product_raw`.
-    Membuat tabel jika belum ada.
-    Menggunakan executemany untuk penyisipan massal yang efisien.
-    """
-    import os
-    # Buat direktori jika belum ada
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
+db_path = "data/database/raw/laptops_data_raw.db"
+
+def save_to_db_snapshot(rows: List[Dict], db_path: str):
+    """
+    Menyimpan data dengan metode SNAPSHOT.
+    Tabel lama DIHAPUS, Tabel baru DIBUAT.
+    """
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Buat table jika belum ada
+    print("🔄 Melakukan Reset Database Raw (Snapshot Mode)...")
+    
+    # 1. HAPUS TABEL LAMA (Drop Table)
+    cursor.execute("DROP TABLE IF EXISTS products_raw")
+
+    # 2. BUAT TABEL BARU (Create Table)
     cursor.execute("""
-                   CREATE TABLE IF NOT EXISTS product_raw (
-                   id INTEGER PRIMARY KEY AUTOINCREMENT,
-                   product_name TEXT NOT NULL,
-                   price_raw INTEGER NOT NULL,
-                   scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                   );
+        CREATE TABLE products_raw (
+            raw_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT,
+            price_raw INTEGER,
+            scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
-    # Persiapkan data untuk bulk insert
-    records = [(item['product_name'], item['price_raw'], datetime.now()) for item in rows]
+    # 3. INSERT SEMUA DATA (Bulk Insert)
+    # Kita insert timestamp saat ini
+    current_time = datetime.now()
+    records = [(item['product_name'], item['price_raw'], current_time) for item in rows]
 
-    # Gunakan executemary untuk insert batch
     cursor.executemany("""
-                       INSERT INTO product_raw (product_name, price_raw, scraped_at)
-                       VALUES (?, ?, ?);
+        INSERT INTO products_raw (product_name, price_raw, scraped_at)
+        VALUES (?, ?, ?);
     """, records)
 
     conn.commit()
+    count = cursor.rowcount
     conn.close()
-    print(f'Done, {len(rows)} items save to database: {db_path}')    
-
-
+    print(f"✅ Snapshot Selesai. {len(records)} data berhasil disimpan ke: {db_path}")
+    
 if __name__ == '__main__':
+    # URL Target
     url = 'https://viraindo.com/notebook.html'
+    
+    print(f"🚀 Memulai scraping ke {url}...")
     html = fetch_url(url)
+    
     if html:
         items = parse_listing_page(html, url)
-        # Ganti save_to_csv dengan save_to_db
-        save_to_db(items, 'data/database/raw/laptop_data_raw.db')
-        # save_to_csv(items, 'data/csv/notebooks_viraindo_scraped.csv')
-        print(f"Scraping done. Total {len(items)} items.")
+        if items:
+            # Simpan ke DB Raw
+            save_to_db_snapshot(items, 'data/database/raw/laptops_data_raw.db')
+        else:
+            print("⚠️ Tidak ada item yang ditemukan saat parsing.")
     else:
-        print('Scraping failed')
+        print("❌ Gagal mengambil HTML dari website.")
+
             
