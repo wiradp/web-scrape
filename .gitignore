@@ -100,3 +100,6 @@ notebooks/*.ipynb
 !notebooks/eda.ipynb
 !notebooks/etl.ipynb
 !notebooks/scraper.ipynb
+
+# Script yang berisi secrets
+src/seeder.py
