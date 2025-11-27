@@ -9,8 +9,9 @@ from urllib.parse import urljoin
 import sqlite3
 import os
 from datetime import datetime
+from logger_setup import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("scraper")
 
 DEFAULT_HEADERS = {
     'User-Agent': 'web-scrape-bot/1.0 (+https://wiradp.github.io)'
@@ -18,14 +19,23 @@ DEFAULT_HEADERS = {
 
 def fetch_url(url: str, headers: Optional[dict]=None, timeout: int=10, retries: int=3) -> Optional[str]:
     headers = headers or DEFAULT_HEADERS
+    logger.info(f"Fetching URL: {url}")
     for attempt in range(1, retries+1):
         try:
+            start = time.time()
             resp = requests.get(url, headers=headers, timeout=timeout)
             resp.raise_for_status()
+            elapsed = round(time.time() - start , 2)
+            logger.info(f"Fetched success in {elapsed}s (status={resp.status_code}, size={len(resp.text)} char)")
+
             return resp.text
+        
         except Exception as e:
-            logger.warning(f"fetch_url attempt {attempt} failed for {url}: {e}")
-            time.sleep(min(2**attempt, 10) + random.random())
+            logger.warning(f"[Attempt {attempt}/{retries}] Failed fetching {url}: {e}")
+            sleep_time = min(2**attempt, 10) + random.random()
+            logger.info(f"Retrying in {sleep_time:.1f}s...")
+            time.sleep(sleep_time)
+    logger.error(f"Giving up after {retries} attempts to fetch {url}.")
     return None
 
 def clean_text(text):
@@ -46,13 +56,14 @@ def parse_listing_page(html: str, base_url: str) -> List[Dict]:
     """
     Mengekstrak informasi produk dari elemen <table> dengan pembersihan teks.
     """
+    logger.info("Parsing listing page...")
     soup = BeautifulSoup(html, 'lxml')
     items = []
 
     # Menargetkan tabel utama di halaman
     table = soup.find('table')
     if not table:
-        print("Elemen <table> tidak ditemukan.")
+        logger.error("Table element not found in page.")
         return []
 
     # Mengambil semua baris (tr) di dalam tabel
@@ -81,13 +92,13 @@ def parse_listing_page(html: str, base_url: str) -> List[Dict]:
                         'product_name': name,
                         'price_raw': price_cleaned
                     })
+                    
         except (ValueError, IndexError) as e:
             # Lewati baris yang mungkin kosong atau formatnya salah
+            logger.warning(f"Skipping row due to error: {e}")
             continue
-        except Exception as e:
-            print(f"Error memproses baris: {e}")
-            continue
-    
+        
+        logger.info(f"Parsing completed. Total items extracted: {len(items)}")
     return items
 
 db_path = "data/database/raw/laptops_data_raw.db"
@@ -97,12 +108,14 @@ def save_to_db_snapshot(rows: List[Dict], db_path: str):
     Menyimpan data dengan metode SNAPSHOT.
     Tabel lama DIHAPUS, Tabel baru DIBUAT.
     """
+    logger.info(f"Saving {len(rows)} raw items to DB snapshot: {db_path}")
+
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    print("🔄 Melakukan Reset Database Raw (Snapshot Mode)...")
-    
+    logger.info("Resetting Raw Database (Snapshot Mode)...")
+            
     # 1. HAPUS TABEL LAMA (Drop Table)
     cursor.execute("DROP TABLE IF EXISTS products_raw")
 
@@ -120,6 +133,7 @@ def save_to_db_snapshot(rows: List[Dict], db_path: str):
     # Kita insert timestamp saat ini
     current_time = datetime.now()
     records = [(item['product_name'], item['price_raw'], current_time) for item in rows]
+    logger.info(f"Inserted {len(records)} new unique items into products_raw table.")
 
     cursor.executemany("""
         INSERT INTO products_raw (product_name, price_raw, scraped_at)
@@ -127,25 +141,29 @@ def save_to_db_snapshot(rows: List[Dict], db_path: str):
     """, records)
 
     conn.commit()
-    count = cursor.rowcount
+    output_count = cursor.rowcount
     conn.close()
-    print(f"✅ Snapshot Selesai. {len(records)} data berhasil disimpan ke: {db_path}")
+    
+    logger.info(f"Snapshot complete. {output_count} records saved")
     
 if __name__ == '__main__':
     # URL Target
     url = 'https://viraindo.com/notebook.html'
     
-    print(f"🚀 Memulai scraping ke {url}...")
+    logger.info("=== START SCRAPER PIPELINE ===")
     html = fetch_url(url)
     
-    if html:
-        items = parse_listing_page(html, url)
-        if items:
-            # Simpan ke DB Raw
-            save_to_db_snapshot(items, 'data/database/raw/laptops_data_raw.db')
-        else:
-            print("⚠️ Tidak ada item yang ditemukan saat parsing.")
-    else:
-        print("❌ Gagal mengambil HTML dari website.")
+    if not html:
+        logger.error("HTML fetch failed. Exiting scraper.")
+        exit()
+
+    items = parse_listing_page(html, url)
+    if not items:
+        logger.warning("No items found during parsing.")
+        exit()
+
+    save_to_db_snapshot(items, db_path="data/database/raw/laptops_data_raw.db")
+
+    logger.info("=== SCRAPER COMPLETED SUCCESSFULLY ===")
 
             

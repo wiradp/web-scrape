@@ -2,53 +2,63 @@ import sqlite3
 import pandas as pd
 import os
 from datetime import datetime
+from logger_setup import setup_logger
+
+logger = setup_logger("export_csv")
 
 def export_db_to_csv(db_path: str, table_name: str, output_csv: str):
     """
-    Mengekstrak data dari tabel SQLite dan menyimpannya ke file CSV.
+    Mengekstrak data dari tabel SQLite dan menyimpannya ke file CSV (with logging).
     """
-    # 1. Pastikan file database ada
+    logger.info("=== START EXPORT CSV PROCESS ===")
+    logger.info(f"Source DB: {db_path}")
+    logger.info(f"Table Name: {table_name}")
+    logger.info(f"Output CSV: {output_csv}")
+
+    # 1. Validasi database
     if not os.path.exists(db_path):
-        print(f"Error: Database tidak ditemukan di {db_path}")
+        logger.error(f"Database tidak ditemukan: {db_path}")
         return
     
-    # 2. Pastikan direktori output ada
-    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
-        
-    conn = sqlite3.connect(db_path)
-    # Query mengambil semua data dari tabel products_current
-    # Tambahkan 'WHERE is_active = 1' jika Anda hanya ingin data yang aktif saat ini
-    query = f"SELECT * FROM {table_name}"
-    
+    # 2. Pastikan direktori CSV ada
+    output_dir = os.path.dirname(output_csv)
+    os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"Output directory verified: {output_dir}")
+
     try:
-        print(f"🔍 Membaca data dari tabel '{table_name}'...")
+        conn = sqlite3.connect(db_path)
+        query = f"SELECT * FROM {table_name}"
+
+        logger.info(f"Membaca data dari tabel '{table_name}'...")
         df = pd.read_sql(query, conn)
-        
-        # Simpan DataFrame ke CSV
+
+        logger.info(f"Total baris yang berhasil dibaca: {len(df)}")
+
+        # Export CSV
         df.to_csv(output_csv, index=False)
-        print(f"✅ Berhasil mengekspor {len(df)} baris ke file:")
-        print(f"   -> {output_csv}")
-        
+        logger.info(f"CSV berhasil dibuat di: {output_csv}")
+
     except pd.io.sql.DatabaseError as e:
-        print(f"Error saat membaca tabel {table_name}: {e}")
+        logger.exception(f"DatabaseError saat membaca tabel {table_name}: {e}")
+
+    except Exception as e:
+        logger.exception(f"Unexpected error saat export: {e}")
+
     finally:
-        conn.close()
+        try:
+            conn.close()
+            logger.info("Koneksi database ditutup.")
+        except:
+            pass
+
+    logger.info("=== EXPORT CSV PROCESS FINISHED ===\n")
+
 
 if __name__ == '__main__':
-    # --- Konfigurasi Path ---
-    
-    # Path ke file database sumber
     DB_FILE = 'data/database/current/laptops_current.db'
     TABLE = 'products_current'
-    
-    # Nama file CSV yang diinginkan
     CSV_FILENAME = 'laptops_current_export.csv'
-    
-    # Mendapatkan path direktori dari DB_FILE (yaitu: data/database/current)
-    db_dir = os.path.dirname(DB_FILE)
-    
-    # Gabungkan direktori dengan nama file CSV
-    OUTPUT_FILE = os.path.join(db_dir, CSV_FILENAME)
 
-    # --- Jalankan Proses Export ---
+    OUTPUT_FILE = os.path.join(os.path.dirname(DB_FILE), CSV_FILENAME)
+
     export_db_to_csv(DB_FILE, TABLE, OUTPUT_FILE)

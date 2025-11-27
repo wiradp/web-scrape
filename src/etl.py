@@ -12,27 +12,12 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 import pandas as pd
 from typing import Tuple, Dict, Any
+from logger_setup import setup_logger
+
+logger = setup_logger("etl")
 
 # -------------------------
-# 1. Logging setup
-# -------------------------
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-log_file = os.path.join(LOG_DIR, "etl.log")
-
-logger = logging.getLogger("etl")
-logger.setLevel(logging.INFO)
-if not logger.handlers:
-    fh = RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
-    fmt = logging.Formatter("%(asctime)s | %(levelname)-8s | %(message)s")
-    fh.setFormatter(fmt)
-    ch = logging.StreamHandler()
-    ch.setFormatter(fmt)
-    logger.addHandler(fh)
-    logger.addHandler(ch)
-
-# -------------------------
-# 2. HELPER FUNCTIONS (Regex & Cleaning)
+# 1. HELPER FUNCTIONS (Regex & Cleaning)
 # -------------------------
 def ensure_dir_for_file(path: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1844,7 +1829,7 @@ def extract_display(display_size):
     return 'Unknown'
 
 # -------------------------
-# 3. CORE LOGIC: SCD TYPE 2
+# 2. CORE LOGIC: SCD TYPE 2
 # -------------------------
 def apply_scd_type2(df_new: pd.DataFrame, current_db_path: str, history_db_path: str):
     """
@@ -1995,7 +1980,10 @@ def apply_scd_type2(df_new: pd.DataFrame, current_db_path: str, history_db_path:
         count = len(discontinued)
         logger.info(f"❌ Menandai {count} produk sebagai tidak aktif (Out of Stock)...")
         for _, row in discontinued.iterrows():
-            cursor_curr.execute("UPDATE products_current SET is_active = 0 WHERE product_name = ?", (row['product_name'],))
+            # Use product_name_old (from right dataframe) for discontinued products
+            product_name_to_update = row.get('product_name_old') or row.get('product_name')
+            if product_name_to_update:
+                cursor_curr.execute("UPDATE products_current SET is_active = 0 WHERE product_name = ?", (product_name_to_update,))
 
     conn_curr.commit()
     conn_hist.commit()
@@ -2011,7 +1999,7 @@ def apply_scd_type2(df_new: pd.DataFrame, current_db_path: str, history_db_path:
     }
 
 # -------------------------
-# 4. MAIN PIPELINE
+# 3. MAIN PIPELINE
 # -------------------------
 def run_etl_pipeline():
     """

@@ -1,7 +1,10 @@
 # main.py
 """
-Main script to run the entire laptop data processing pipeline.
-Executes: scrape -> etl -> (optionally) launch dashboard.
+Main orchestrator for the full pipeline:
+1. Scrape website → save snapshot DB
+2. Run ETL → create current + history DB
+3. Export current DB to CSV
+4. Upload CSV to Supabase (Seeder)
 """
 
 import subprocess
@@ -9,111 +12,46 @@ import sys
 import os
 import logging
 
-# --- Setup Logging ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)-8s | %(message)s',
-    handlers=[
-        logging.FileHandler('pipeline.log'),  # Log ke file
-        logging.StreamHandler(sys.stdout)     # Log ke terminal
-    ]
-)
+# Ensure the module can be imported from the current directory
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-logger = logging.getLogger(__name__)
+from src.logger_setup import setup_logger
 
-# --- Define Paths ---
-SCRAPER_PATH = "src/scraper.py"
-ETL_PATH = "src/etl.py"
-DASHBOARD_PATH = "src/dashboard.py"
+logger = setup_logger("pipeline")
 
-# --- Helper Function to Run Scripts ---
-def run_script(script_path: str, description: str):
-    """
-    Runs a Python script using subprocess.
-    Logs success or failure.
-    """
-    logger.info(f"🔄 Executing {description}...")
-    logger.info(f"📄 Script path: {script_path}")
-    
+def run_step(step_name: str, command: list):
+    logger.info(f"=== START: {step_name} ===")
     try:
-        # Pastikan path file valid
-        if not os.path.exists(script_path):
-            logger.error(f"❌ File not found: {script_path}")
-            return False
+        subprocess.run([sys.executable] + command, check=True)
+        logger.info(f"=== SUCCESS: {step_name} ===\n")
+    except subprocess.CalledProcessError as e:
+        logger.exception(f"FAILED at step: {step_name}")
+        raise
 
-        # Jalankan script
-        result = subprocess.run(
-            [sys.executable, script_path],
-            capture_output=True,
-            text=True,
-            cwd=os.path.dirname(os.path.abspath(__file__)) # Jika kamu ingin menjalankan dari root proyek
-        )
 
-        # Cek apakah proses berhasil (return code 0)
-        if result.returncode == 0:
-            logger.info(f"✅ {description} executed successfully!")
-            if result.stdout:
-                logger.debug(f"--- STDOUT ---\n{result.stdout}")
-            return True
-        else:
-            logger.error(f"❌ {description} failed with return code {result.returncode}")
-            logger.error(f"--- STDERR ---\n{result.stderr}")
-            return False
-
-    except FileNotFoundError:
-        logger.error(f"❌ Python interpreter not found when running {script_path}")
-        return False
-    except Exception as e:
-        logger.error(f"❌ Unexpected error running {script_path}: {e}")
-        return False
-
-# --- Main Pipeline Execution ---
-def run_pipeline(run_dashboard: bool = False):
-    """
-    Runs the full pipeline: scrape -> etl -> (dashboard).
-    Args:
-        run_dashboard (bool): If True, launches the Streamlit dashboard after ETL.
-    """
-    logger.info("=" * 80)
-    logger.info("🚀 Starting Laptop Data Processing Pipeline")
-    logger.info("=" * 80)
-
-    # 1. Run Scraper
-    success_scraper = run_script(SCRAPER_PATH, "Scraping Process (scraper.py)")
-    if not success_scraper:
-        logger.critical("🚨 Scraping failed. Stopping pipeline.")
-        return
-
-    # 2. Run ETL
-    success_etl = run_script(ETL_PATH, "ETL Process (etl.py)")
-    if not success_etl:
-        logger.critical("🚨 ETL failed. Stopping pipeline.")
-        return
-
-    logger.info("✅ Pipeline execution completed successfully!")
-
-    # 3. (Opsional) Run Dashboard
-    if run_dashboard:
-        logger.info("\n--- Launching Dashboard ---")
-        logger.info("📌 Note: This will start the Streamlit server. Press Ctrl+C to stop.")
-        try:
-            logger.info(f"📄 Dashboard path: {DASHBOARD_PATH}")
-            # Ganti dengan subprocess.run jika kamu ingin kontrol lebih
-            subprocess.run([sys.executable, "-m", "streamlit", "run", DASHBOARD_PATH])
-        except KeyboardInterrupt:
-            logger.info("🛑 Dashboard stopped by user.")
-        except Exception as e:
-            logger.error(f"❌ Failed to launch dashboard: {e}")
-
-    logger.info("=" * 80)
-    logger.info("🎉 Pipeline finished.")
-    logger.info("=" * 80)
-
-# --- Entry Point ---
 if __name__ == "__main__":
-    # --- Opsi: Jalankan dashboard setelah pipeline selesai ---
-    # Ubah menjadi True jika kamu ingin sekaligus membuka dashboard
-    RUN_DASHBOARD_AFTER_PIPELINE = True
+    logger.info("###############################################")
+    logger.info("##########  PIPELINE EXECUTION START ##########")
+    logger.info("###############################################")
 
-    # Jalankan pipeline
-    run_pipeline(run_dashboard=RUN_DASHBOARD_AFTER_PIPELINE)
+    try:
+        # 1. SCRAPER
+        run_step("Scraper: Fetch Raw Laptop Data", ["src/scraper.py"])
+
+        # 2. ETL (Feature Extraction + SCD2 + load databases)
+        run_step("ETL: Process Raw Data → Current + History DB", ["src/etl.py"])
+
+        # 3. EXPORT CURRENT DB → CSV
+        run_step("Export DB to CSV", ["src/export_db_to_csv.py"])
+
+        # 4. SEED CSV → SUPABASE
+        run_step("Seed Data to Supabase", ["src/seeder.py"])
+
+        logger.info("##########  PIPELINE COMPLETED SUCCESSFULLY ##########\n")
+
+    except Exception as e:
+        logger.exception("PIPELINE FAILED — CHECK LOGS ABOVE FOR DETAILS.")
+
+    logger.info("###############################################")
+    logger.info("##########  PIPELINE EXECUTION END   ##########")
+    logger.info("###############################################\n")
