@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
+import sqlite3
 
 
 # Set page config
@@ -60,9 +61,10 @@ def load_data():
     st.info("☁️ Loading data from Supabase...")
     
     try:
-        # Mengambil data dari tabel 'laptops_current' di Supabase
+        # Mengambil data dari tabel 'products_current' di Supabase
+        # Gunakan 1 (integer) bukan True (boolean) untuk filter is_active
         # Pastikan setting 'Max Rows' di Supabase API Settings sudah > 64000
-        response = supabase.table('products_current').select('*').eq('is_active', True).execute()
+        response = supabase.table('products_current').select('*').eq('is_active', 1).execute()
         
         # Supabase client mengembalikan dictionary, kita ubah ke DataFrame
         df = pd.DataFrame(response.data)
@@ -74,14 +76,14 @@ def load_data():
             # Konversi kolom tanggal ke format datetime
             df['valid_from'] = pd.to_datetime(df['valid_from'], errors='coerce')
             
-        # st.success(f"✅ Loaded successfully {len(df)} data rows from Supabase.")
+        st.success(f"✅ Loaded successfully {len(df)} data rows from Supabase.")
         return df
         
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        st.error(f"Error loading data from Supabase: {e}")
         return pd.DataFrame() # Return empty DF biar gak crash
 
-# Masukkan objek supabase yang sudah diinisialisasi sebagai argumen
+# Load data dari Supabase
 df = load_data()
 
 # Cek apakah data berhasil dimuat
