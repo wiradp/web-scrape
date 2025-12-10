@@ -37,7 +37,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INISIALISASI KONEKSI SUPABASE ---
+# --- INITIALIZING THE SUPABASE CONNECTION ---
 @st.cache_resource
 def init_connection():
     try:
@@ -52,28 +52,28 @@ def init_connection():
 
 supabase = init_connection()
 
-# --- LOAD DATA DARI SUPABASE ---
-@st.cache_data(ttl=600) # Cache data selama 10 menit
+# --- LOAD DATA FROM SUPABASE ---
+@st.cache_data(ttl=600) # Cache data for 10 minutes
 def load_data():
     if supabase is None:
-        return pd.DataFrame() # Keluar jika koneksi gagal
+        return pd.DataFrame() # Exit if connection fails
     
     st.info("☁️ Loading data from Supabase...")
     
     try:
-        # Mengambil data dari tabel 'products_current' di Supabase
-        # Gunakan 1 (integer) bukan True (boolean) untuk filter is_active
-        # Pastikan setting 'Max Rows' di Supabase API Settings sudah > 64000
+        # Retrieve data from the ‘products_current’ table in Supabase
+        # Use 1 (integer) instead of True (boolean) for the is_active filter
+        # Ensure that the ‘Max Rows’ setting in Supabase API Settings is > 10500
         response = supabase.table('products_current').select('*').eq('is_active', 1).execute()
         
-        # Supabase client mengembalikan dictionary, kita ubah ke DataFrame
+        # The Supabase client returns a dictionary, which we convert to a DataFrame.
         df = pd.DataFrame(response.data)
 
-        # --- Pembersihan dan Konversi Tipe Data (Penting) ---
-        # Supabase mengembalikan semuanya sebagai string, kita konversi tipe numerik
+        # --- Data Type Cleaning and Conversion (Important) ---
+        # Supabase returns everything as strings, so we convert the numeric types.
         if not df.empty:
             df['price_in_millions'] = pd.to_numeric(df['price_in_millions'], errors='coerce')
-            # Konversi kolom tanggal ke format datetime
+            # Convert date column to datetime format
             df['valid_from'] = pd.to_datetime(df['valid_from'], errors='coerce')
             
         st.success(f"✅ Loaded successfully {len(df)} data rows from Supabase.")
@@ -81,41 +81,41 @@ def load_data():
         
     except Exception as e:
         st.error(f"Error loading data from Supabase: {e}")
-        return pd.DataFrame() # Return empty DF biar gak crash
+        return pd.DataFrame() # Return an empty DF so it doesn't crash
 
-# Load data dari Supabase
+# Load data from Supabase
 df = load_data()
 
-# Cek apakah data berhasil dimuat
+# Check whether the data has been successfully loaded
 if df.empty:
     st.warning("Data is missing or failed to load. Check the logs above")
     st.stop()
 
-# --- Bersihkan dan validasi kolom harga final (price_in_millions) ---
-# Kita tidak perlu memproses price_raw lagi, karena ini data bersih dari ETL
+# --- Clean and validate the final price column (price_in_millions) ---
+# We don't need to process price_raw anymore, because this is clean data from ETL.
     
 if 'price_in_millions' in df.columns:
-    # 1. Pastikan nilai adalah numerik dan bukan NaN
+    # 1. Ensure that the value is numeric and not NaN.
     df['price_in_millions'] = pd.to_numeric(df['price_in_millions'], errors='coerce')
     df = df[df['price_in_millions'].notna()]
     
-    # 2. Filter harga yang masuk akal (> 0 dan < 150 juta)
+    # 2. Reasonable price filter (> 0 and < 150 million)
     df = df[df['price_in_millions'] > 0]
-    df = df[df['price_in_millions'] < 150]  # Filter harga yang masuk akal (< 150 juta)
+    df = df[df['price_in_millions'] < 150]  # Reasonable price filter (< 150 million)
     
     # 3. Remove duplicates dan sort
     df = df.drop_duplicates(subset=['product_name', 'brand']).sort_values('price_in_millions')
 
 else:
     st.error("Kolom price_in_millions tidak ditemukan dalam dataset")
-    st.stop() # Hentikan eksekusi jika kolom utama harga hilang
+    st.stop() # Stop execution if the main price column is missing
 
 # Main title with styling
 st.title("🔍 Indonesian Laptop Market Analysis Dashboard")
 st.markdown("---")
 
 if not df.empty:
-    # Tambahkan KPI di awal
+    # Add KPIs at the beginning
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Products", len(df))
     col2.metric("Avg. Price (Rp)", f"{df['price_in_millions'].mean():,.2f}M")
@@ -125,12 +125,12 @@ if not df.empty:
     # Sidebar filters
     st.sidebar.header("📊 Filters")
 
-    # Filter seperti sebelumnya
+    # Filter as before
     all_brands = sorted(df['brand'].unique())
     selected_brands = st.sidebar.multiselect(
         "Select Brands:",
         options=all_brands,
-        default=all_brands  # <-- Default ke semua brand
+        default=all_brands  # <-- Default to all brands
     )
 
     max_price = float(df['price_in_millions'].max())
@@ -139,7 +139,7 @@ if not df.empty:
         "Price Range (Million Rp):",
         min_value=min_price,
         max_value=max_price,
-        value=(min_price, max_price),  # <-- Default ke semua rentang
+        value=(min_price, max_price),  # <-- Default to all ranges
         step=0.1
     )
 
@@ -161,7 +161,7 @@ if not df.empty:
         (filtered_df['price_in_millions'] >= price_range[0]) & (filtered_df['price_in_millions'] <= price_range[1])
     ]
 
-    # Pastikan tidak ada nilai NaN pada kolom price_in_millions
+    # Ensure there are no NaN values in the price_in_millions column.
     filtered_df = filtered_df[filtered_df['price_in_millions'].notnull()]
 
     # Processor category filter
@@ -172,7 +172,7 @@ if not df.empty:
     if selected_gpu != 'All':
         filtered_df = filtered_df[filtered_df['gpu_category'] == selected_gpu]
     
-    # Tambahkan Tab
+    # Add Tab
     tab1, tab2, tab3, tab4 = st.tabs(["Price Analysis", "Specifications", "Distribution", "Product List"])
 
     with tab1:
@@ -217,13 +217,84 @@ if not df.empty:
                 margin=dict(l=50, r=50, t=50, b=100)
             )
 
-            st.plotly_chart(fig_price, width='stretch')  
+            st.plotly_chart(fig_price, width='stretch')
+
+            # Distribution of Laptop Prices
+            # Tentukan range harga yang ingin dipertahankan
+            min_price = 0
+            max_price = 50  # sesuai dengan range maksimal Anda
+            bin_width = 5   # ukuran konsisten setiap bin (5 juta)
+
+            # Buat bins dengan ukuran konsisten
+            bins = np.arange(min_price, max_price + bin_width, bin_width)
+
+            # Buat labels yang sesuai
+            bin_labels = [f'< {bins[1]:.0f}Jt'] + \
+                         [f'{bins[i]:.0f}-{bins[i+1]:.0f}Jt' for i in range(1, len(bins)-2)] + \
+                         [f'> {bins[-2]:.0f}Jt']
+
+            # --- VISUALIZATION REVAMPED ---
+            plt.style.use('seaborn-v0_8-whitegrid')
+            fig, ax = plt.subplots(figsize=(14, 7), facecolor='white')
+
+            # Buat histogram untuk mendapatkan nilai n (jumlah) dan bin edges
+            n, bins, _ = ax.hist(filtered_df['price_in_millions'], bins=bins, alpha=0) # Sembunyikan plot awal
+            ax.clear() # Hapus histogram tak terlihat
+            ax.grid(False)
+
+            # Definisikan palet warna gradasi
+            colors = plt.cm.viridis(np.linspace(0.1, 0.85, len(bin_labels)))
+
+            # Buat bar chart manual menggunakan data dari histogram
+            bin_centers = bins[:-1] + np.diff(bins)/2
+            bars = ax.bar(bin_centers, n, width=bin_width*0.8, 
+                          color=colors, alpha=0.9, edgecolor='white', linewidth=2)
+
+            # Atur Judul dan Label
+            ax.set_title('Distribution of Laptop Prices', fontsize=18, fontweight='bold', pad=25)
+            ax.set_xlabel('Price Range (in Millions Rp)', fontsize=14, labelpad=15)
+            ax.set_ylabel('Number of Products', fontsize=14, labelpad=15)
+
+            # Atur Ticks
+            ax.set_xticks(bin_centers)
+            ax.set_xticklabels(bin_labels, rotation=45, ha="right", fontsize=12)
+            ax.tick_params(axis='y', labelsize=11)
+            ax.tick_params(axis='x', which='major', pad=7)
+
+            # Hapus garis-garis yang tidak perlu (spines)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.spines['bottom'].set_color('lightgray')
+
+            # Tambahkan label di atas bar
+            for bar in bars:
+                height = bar.get_height()
+                if height > 0:
+                    ax.annotate(f'{int(height)}',
+                                xy=(bar.get_x() + bar.get_width() / 2, height),
+                                xytext=(0, 5),  # 5 points vertical offset
+                                textcoords="offset points",
+                                ha='center', va='bottom', fontsize=11, fontweight='semibold', color='#333')
+
+            # Optimalkan layout dan tampilkan
+            plt.tight_layout(pad=2)
+            st.pyplot(fig)  
 
             # Insight
+            # Laptop Price Distribution by Brand
             avg_price_by_brand = filtered_df.groupby('brand')['price_in_millions'].mean().sort_values(ascending=False)
             if not avg_price_by_brand.empty:
                 top_brand = avg_price_by_brand.index[0]
                 st.info(f"💡 Insight: {top_brand} has the highest average price.")
+
+            # Distribution of Laptop Prices
+            # Generate and display insight from the histogram
+            if 'n' in locals() and 'bin_labels' in locals() and len(n) > 0:
+                max_count_index = np.argmax(n)
+                most_common_range = bin_labels[max_count_index]
+                histogram_insight = f"The price range with the most products is **{most_common_range}**, containing {int(n[max_count_index])} different laptop models."
+                st.info(f"💡 Insight: {histogram_insight}")
 
     with tab2:
         st.subheader("💾 RAM & Storage Distribution")

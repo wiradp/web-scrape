@@ -59,6 +59,9 @@ if __name__ == '__main__':
     TABLE = 'products_current'
     CSV_FILENAME = 'laptops_current_export.csv'
 
-    OUTPUT_FILE = os.path.join(os.path.dirname(DB_FILE), CSV_FILENAME)
+    # CSV disimpan ke folder data/csv
+    OUTPUT_DIR = 'data/csv'
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    OUTPUT_FILE = os.path.join(OUTPUT_DIR, CSV_FILENAME)
 
     export_db_to_csv(DB_FILE, TABLE, OUTPUT_FILE)

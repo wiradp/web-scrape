@@ -62,6 +62,7 @@ config.yaml
 coverage.xml
 htmlcov/
 nosetests.xml
+test/
 
 # ===================================
 # 🧰 Editors / IDE
@@ -103,3 +104,24 @@ notebooks/*.ipynb
 
 # Script yang berisi secrets
 src/seeder.py
+
+SUPABASE_CONFIG.md
+
+# ===================================
+# Setup .sh files
+# ===================================
+*.sh
+*.md
+*.sql
+
+# ===================================
+# Semantic Files (untuk integrasi dengan tools semantic)
+# ===================================
+src/embedding_service.py
+src/search_service.py
+src/indexer.py
+src/query_rewriter.py
+src/analisis.py
+src/etl_old.py
+
+

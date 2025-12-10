@@ -14,7 +14,7 @@ from logger_setup import setup_logger
 logger = setup_logger("scraper")
 
 DEFAULT_HEADERS = {
-    'User-Agent': 'web-scrape-bot/1.0 (+https://wiradp.github.io)'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36'
 }
 
 def fetch_url(url: str, headers: Optional[dict]=None, timeout: int=10, retries: int=3) -> Optional[str]:
@@ -40,53 +40,54 @@ def fetch_url(url: str, headers: Optional[dict]=None, timeout: int=10, retries: 
 
 def clean_text(text):
     """
-    Membersihkan teks dari whitespace characters (\r, \n, \t) dan multiple spaces.
+    Cleaning text from whitespace characters (\r, \n, \t) and multiple spaces.
     """
     if not text:
         return text
     
-    # Replace \r, \n, \t dengan space
+    # Replace \r, \n, \t with space
     cleaned = re.sub(r'[\r\n\t]+', ' ', text)
-    # Replace multiple spaces dengan single space
+    # Replace multiple spaces with single space
     cleaned = re.sub(r'\s+', ' ', cleaned)
     # Trim leading and trailing spaces
     return cleaned.strip()
 
-def parse_listing_page(html: str, base_url: str) -> List[Dict]:
+def parse_listing_page(html: str, base_url: str = None) -> List[Dict]:
     """
-    Mengekstrak informasi produk dari elemen <table> dengan pembersihan teks.
+    Extract product information from <table> elements with text cleaning.
+    The base_url parameter is not used but is retained for compatibility.
     """
     logger.info("Parsing listing page...")
     soup = BeautifulSoup(html, 'lxml')
     items = []
 
-    # Menargetkan tabel utama di halaman
+    # Targeting the main table on the page
     table = soup.find('table')
     if not table:
         logger.error("Table element not found in page.")
         return []
 
-    # Mengambil semua baris (tr) di dalam tabel
+    # Take all rows (tr) in the table
     rows = table.find_all('tr')
     
-    # Loop melalui setiap baris, lewati baris header jika perlu
-    for row in rows[1:]: # Mulai dari indeks 1 untuk melewati header
+    # Loop through each row, skipping the header row if necessary
+    for row in rows[1:]: # Starting from index 1 to skip the header
         try:
             cols = row.find_all('td')
-            # Memastikan baris memiliki setidaknya 2 kolom (nama dan harga)
+            # Ensure that the row has at least 2 columns (name and price)
             if len(cols) >= 2:
-                # Kolom pertama (indeks 0) adalah nama produk - DIBERSIHKAN
+                # The first column (index 0) is the product name - CLEANED
                 raw_name = cols[0].get_text()
                 name = clean_text(raw_name)
                 
-                # Kolom kedua (indeks 1) adalah harga - DIBERSIHKAN
+                # The second column (index 1) is the price - CLEANED
                 raw_price = cols[1].get_text()
                 price_str = clean_text(raw_price)
                 
-                # Membersihkan harga dari 'Rp', '.', dan spasi
+                # Remove ‘Rp’, ‘.’, and spaces from the price
                 price_cleaned = int(re.sub(r'[^\d]', '', price_str))
                 
-                # Hanya tambahkan jika nama dan harga valid
+                # Only add if the name and price are valid
                 if name and price_cleaned > 0:
                     items.append({
                         'product_name': name,
@@ -94,76 +95,65 @@ def parse_listing_page(html: str, base_url: str) -> List[Dict]:
                     })
                     
         except (ValueError, IndexError) as e:
-            # Lewati baris yang mungkin kosong atau formatnya salah
+            # Skip lines that may be empty or have incorrect formatting.
             logger.warning(f"Skipping row due to error: {e}")
             continue
         
-        logger.info(f"Parsing completed. Total items extracted: {len(items)}")
+        logger.info(f"Parsing completed. Total items parsed: {len(items)}")
     return items
 
-db_path = "data/database/raw/laptops_data_raw.db"
+def normalize_name_for_dedupe(s: str) -> str:
+    if not isinstance(s, str): return ""
+    s = s.lower().strip()
+    s = re.sub(r'\s+', ' ', s)
+    return s
 
-def save_to_db_snapshot(rows: List[Dict], db_path: str):
-    """
-    Menyimpan data dengan metode SNAPSHOT.
-    Tabel lama DIHAPUS, Tabel baru DIBUAT.
-    """
-    logger.info(f"Saving {len(rows)} raw items to DB snapshot: {db_path}")
+DB_PATH = "data/database/raw/laptops_data_raw.db"
 
+def save_snapshot_dedup(rows: List[Dict], db_path: str = DB_PATH):
+    """Snapshot mode: drop/create products_raw, but dedupe entries by normalized name before insert."""
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    logger.info(f"Saving snapshot to {db_path} (dedup before insert)...")
+    # dedupe by normalized product_name (keep first occurrence)
+    seen = set()
+    deduped = []
+    for r in rows:
+        key = normalize_name_for_dedupe(r['product_name'])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(r)
+    now_iso = datetime.utcnow().isoformat(sep=' ', timespec='seconds')  # e.g. '2025-11-24 21:38:00'
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    logger.info("Resetting Raw Database (Snapshot Mode)...")
-            
-    # 1. HAPUS TABEL LAMA (Drop Table)
-    cursor.execute("DROP TABLE IF EXISTS products_raw")
-
-    # 2. BUAT TABEL BARU (Create Table)
-    cursor.execute("""
+    cur = conn.cursor()
+    cur.execute("DROP TABLE IF EXISTS products_raw;")
+    cur.execute("""
         CREATE TABLE products_raw (
             raw_id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_name TEXT,
             price_raw INTEGER,
-            scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            scraped_at TEXT
         );
     """)
-
-    # 3. INSERT SEMUA DATA (Bulk Insert)
-    # Kita insert timestamp saat ini
-    current_time = datetime.now()
-    records = [(item['product_name'], item['price_raw'], current_time) for item in rows]
-    logger.info(f"Inserted {len(records)} new unique items into products_raw table.")
-
-    cursor.executemany("""
-        INSERT INTO products_raw (product_name, price_raw, scraped_at)
-        VALUES (?, ?, ?);
-    """, records)
-
+    records = [(r['product_name'], r['price_raw'], now_iso) for r in deduped]
+    cur.executemany("INSERT INTO products_raw (product_name, price_raw, scraped_at) VALUES (?, ?, ?);", records)
     conn.commit()
-    output_count = cursor.rowcount
     conn.close()
-    
-    logger.info(f"Snapshot complete. {output_count} records saved")
+    logger.info(f"Snapshot save complete. {len(records)} rows written (deduped from {len(rows)}).")
     
 if __name__ == '__main__':
     # URL Target
-    url = 'https://viraindo.com/notebook.html'
-    
-    logger.info("=== START SCRAPER PIPELINE ===")
+    url = "https://viraindo.com/notebook.html"
+    logger.info("=== START SCRAPER ===")
     html = fetch_url(url)
-    
     if not html:
-        logger.error("HTML fetch failed. Exiting scraper.")
-        exit()
-
-    items = parse_listing_page(html, url)
+        logger.error("HTML fetch failed.")
+        raise SystemExit(1)
+    items = parse_listing_page(html)
     if not items:
-        logger.warning("No items found during parsing.")
-        exit()
-
-    save_to_db_snapshot(items, db_path="data/database/raw/laptops_data_raw.db")
-
-    logger.info("=== SCRAPER COMPLETED SUCCESSFULLY ===")
+        logger.warning("No items parsed. Exiting.")
+        raise SystemExit(0)
+    save_snapshot_dedup(items, DB_PATH)
+    logger.info("=== SCRAPER FINISHED ===")
 
             

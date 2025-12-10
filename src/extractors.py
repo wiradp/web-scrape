@@ -86,15 +86,15 @@ def extract_brand(product_name, brand_list):
     """
     Extract the brand from the product name based on the given brand list.
     """
-    # Memastikan product_name adalah string
+    # Ensuring that product_name is a string
     if not isinstance(product_name, str):
         logger.debug(f"Invalid product_name type: {type(product_name)}")
         return 'Other'
     
-    # Normalisasi teks untuk pencarian yang lebih baik
+    # Text normalization for better search results
     product_text = product_name.strip()
     
-     # Pengecekan khusus untuk model Lenovo Legion
+     # Special check for Lenovo Legion models
     if re.search(r'\bLegion\s*\d', product_text, re.IGNORECASE):
         logger.debug(f"Brand detected: Lenovo (Legion) from '{product_name}'")
         return 'Lenovo'
