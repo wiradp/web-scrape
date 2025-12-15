@@ -34,8 +34,8 @@ The system runs on a pipeline called `run_pipeline.sh` which executes these step
 
 1. `scraper.py` Visits the website and downloads raw data into a local database.
 2. `etl.py` **(Extract, Transform, Load)** * Cleans the raw data.
-  - Extracts specs (Brand, CPU, GPU).
-  - Compares new data vs. old data to detect price changes.
+    - Extracts specs (Brand, CPU, GPU).
+    - Compares new data vs. old data to detect price changes.
 5. `seeder.py` Uploads the processed data from the Local Database to the **Supabase Cloud**.
 6. `dashboard.py` The user interface (built with Streamlit) fetches data from Supabase and displays it to the user.
 
