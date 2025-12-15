@@ -1,61 +1,96 @@
-# 💻 Laptop Market Analytics — Automated Data Pipeline with Future AI Integration
+# 💻 Laptop Market Analytics — Automated Data Pipeline
+**Author**: Wira Dhana Putra
 
-**Author:** [Wira Dhana Putra](https://wiradp.github.io)  
-**Status:** Public Preview (Active Development)  
-**Live Demo:** _Coming Soon via Streamlit Cloud_
+**Status**: Live Production 🚀
 
----
-
-## 🌍 Overview
-
-This project is an **end-to-end data pipeline** that automatically collects and analyzes laptop product information from online marketplaces such as [Viraindo.com](https://viraindo.com/notebook.html).  
-The system extracts key specifications (brand, processor, GPU, RAM, storage, etc.), tracks price changes over time, and visualizes insights through an interactive dashboard.
-
-It is built to be:
-- ⚙️ **Automated** – one command runs scraping, data cleaning, and dashboard update.
-- 📈 **Scalable** – easily handles thousands of products and updates.
-- 🧠 **Insightful** – enables analytics, forecasting, and future AI-driven recommendations.
+**Live Demo**: Click Here to View Dashboard
 
 ---
 
-## 🏗️ Architecture
+## 🌍 What is this?
+We're working on an automated system designed to track laptop prices across Indonesia. It pulls data from online marketplaces, cleans it up, and presents it on a public dashboard for everyone to see.
 
-
-- **scraper.py** → Fetches product names and raw prices from marketplace pages.  
-- **etl.py** → Cleans and enriches data with extracted columns such as:
-  - Brand (`brand`)
-  - Series (`series`)
-  - Processor details & category (`processor_detail`, `processor_category`)
-  - GPU & GPU category (`gpu`, `gpu_category`)
-  - RAM, storage, display size, and price normalization.  
-- **dashboard.py** → Visualizes and analyzes market trends interactively (via Streamlit).  
-- **Database** → Stores historical price and product updates for long-term insights.
+This system is more advanced than simple scrapers because it remembers history. When a laptop's price changes today, it saves the old price instead of deleting it. This feature enables users to see price trends and quickly identify new product arrivals.
 
 ---
 
-## 🔍 Example Data (after ETL)
+## 🚀 Key Features (What's Done)
+1. Smart Data Collection
+Automated Scraping: Collects thousands of laptop data points automatically.
 
-| raw_product_name | brand | series | processor_category | gpu_category | ram | storage | display | price_raw | 
-|---------------|--------|--------|--------------------|---------------|------|----------|----------|----------------|
-| ASUS Vivobook Go 14 E410KA | ASUS | Vivobook Go | Intel N-Series | Integrated | 4 GB | 256 GB SSD | 14" | 4.5 |
-| Lenovo LOQ 15AHP9 | Lenovo | LOQ | AMD Ryzen 7 | RTX 4050 | 16 GB | 512 GB SSD | 15.6" | 15.9 |
+Data Cleaning: Converts messy text (e.g., "16gb ddr4") into clean data columns (RAM: 16 GB).
+
+2. Historical Tracking (SCD Type 2)
+Price History: If a price changes, the old data is archived, not deleted.
+
+Change Logging: The system records exactly when a price changed or when a new product was added.
+
+3. Hybrid Database System
+Local Processing: Uses SQLite for fast, safe data processing on the local machine.
+
+Cloud Sync: Automatically syncs clean data to Supabase (PostgreSQL) so the public dashboard is always up-to-date.
+
+4. Interactive Dashboard
+"What's New" Tab: A special feature that shows New Arrivals and Price Drops/Hikes from the latest update.
+
+Filters: Filter by Brand, RAM, Processor, and GPU.
+
+Analytics: Visualizes price distributions and spec trends.
+
+---
+
+## 🏗️ Architecture: How it Works
+The system runs on a pipeline called run_pipeline.sh which executes these steps in order:
+
+scraper.py Visits the website and downloads raw data into a local database.
+
+etl.py (Extract, Transform, Load) * Cleans the raw data.
+
+Extracts specs (Brand, CPU, GPU).
+
+Compares new data vs. old data to detect price changes.
+
+seeder.py Uploads the processed data from the Local Database to the Supabase Cloud.
+
+dashboard.py The user interface (built with Streamlit) fetches data from Supabase and displays it to the user.
 
 ---
 
-## 📊 Key Features
+## 🛠️ Tech Stack
+Language: Python 🐍
 
-### Core Pipeline
-✅ Automated web scraping and incremental updates  
-✅ Historical price tracking in database  
-✅ Feature engineering (brand, processor, GPU, RAM, storage, display)  
-✅ Streamlit dashboard for market visualization  
+Automation: Bash Script & Cron Job
 
-### Future Enhancements
-🚀 **AI-powered insights** – "Find the best laptop under 8 million IDR"  
-🧩 **Semantic search** – similar product recommendation using embeddings  
-📉 **Price anomaly detection** – alert when a product price drops unusually  
-📆 **Trend forecasting** – using Prophet or ARIMA for future price predictions  
-🧱 **Migration to PostgreSQL / Cloud DB** – for larger-scale deployments  
-🌐 **API endpoint (FastAPI)** – expose analytics and product search via REST API  
+Data Processing: Pandas, NumPy
+
+Database: SQLite (Local) & Supabase (Cloud/PostgreSQL)
+
+Visualization: Streamlit, Plotly, Matplotlib
 
 ---
+
+## 🔮 Future Roadmap
+🧠 AI Semantic Search: "Find me a cheap laptop for video editing" (Using Vector Embeddings).
+
+📆 Price Forecasting: Predict when prices might drop using Machine Learning.
+
+🔔 Email Alerts: Notify users when their favorite laptop gets a discount.
+
+---
+
+## 📂 Project Structure
+
+├── data/               # Local database storage
+├── logs/               # Automation logs
+├── src/
+│   ├── scraper.py      # Grabs data from web
+│   ├── etl.py          # Cleans & processes history
+│   ├── seeder.py       # Syncs local DB to Cloud
+│   ├── dashboard.py    # The Streamlit App
+│   └── ...
+├── run_pipeline.sh     # Main automation script
+└── requirements.txt    # Python dependencies
+
+---
+
+_Created with ❤️ by Wira_
