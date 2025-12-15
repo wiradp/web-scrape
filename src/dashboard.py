@@ -8,7 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
-import sqlite3
+import matplotlib.colors as mcolors
+import ast
 
 
 # Set page config
@@ -64,7 +65,7 @@ def load_data():
         # Retrieve data from the ‘products_current’ table in Supabase
         # Use 1 (integer) instead of True (boolean) for the is_active filter
         # Ensure that the ‘Max Rows’ setting in Supabase API Settings is > 10500
-        response = supabase.table('products_current').select('*').eq('is_active', 1).execute()
+        response = supabase.table('products_current').select('*, product_hash').eq('is_active', 1).execute()
         
         # The Supabase client returns a dictionary, which we convert to a DataFrame.
         df = pd.DataFrame(response.data)
@@ -72,16 +73,147 @@ def load_data():
         # --- Data Type Cleaning and Conversion (Important) ---
         # Supabase returns everything as strings, so we convert the numeric types.
         if not df.empty:
-            df['price_in_millions'] = pd.to_numeric(df['price_in_millions'], errors='coerce')
-            # Convert date column to datetime format
-            df['valid_from'] = pd.to_datetime(df['valid_from'], errors='coerce')
+            df['price_in_millions'] = pd.to_numeric(df['price_in_millions'], errors='coerce').fillna(0)
+            df['price_raw'] = pd.to_numeric(df['price_raw'], errors='coerce').fillna(0)
             
-        st.success(f"✅ Loaded successfully {len(df)} data rows from Supabase.")
+        st.success(f"✅ Loaded successfully from Supabase.")
         return df
         
     except Exception as e:
         st.error(f"Error loading data from Supabase: {e}")
         return pd.DataFrame() # Return an empty DF so it doesn't crash
+
+# --- Load Changes Log (DENGAN PARSING JSON YANG LEBIH KUAT)
+def get_last_run_info():
+    """Mengambil run_id terakhir dari tabel etl_runs di SUPABASE."""
+    if supabase is None: return None, None
+    try:
+        # Query ke Supabase: Ambil run_id DAN run_at
+        response = supabase.table('etl_runs')\
+            .select('run_id, run_at')\
+            .order('run_id', desc=True)\
+            .limit(1)\
+            .execute()
+            
+        if response.data:
+            data = response.data[0]
+            return data['run_id'], data['run_at']
+        return None, None
+    except Exception as e:
+        st.error(f"Error fetching run info from Supabase: {e}")
+        return None, None
+
+def safe_extract_price(input_data):
+    """
+    Ekstrak harga secara aman. Menangani input berupa String JSON maupun Dict Python.
+    Fokus: Mengambil 'old' price jika tersedia (untuk price update).
+    """
+    # 1. Normalisasi Input (String -> Dict)
+    data = input_data
+    if isinstance(input_data, str):
+        try:
+            data = ast.literal_eval(input_data)
+        except:
+            return 0
+            
+    # Jika setelah parsing masih bukan dict, gagal.
+    if not isinstance(data, dict):
+        return 0
+
+    # 2. Ambil nilai price_raw
+    val = data.get('price_raw', 0)
+
+    # 3. Logika Cabang (Nested vs Flat)
+    # Kasus A: Price Update (Format: {'old': 14jt, 'new': 15jt})
+    if isinstance(val, dict):
+        final_val = val.get('old', 0)
+    # Kasus B: New Product (Format: 15000000)
+    else:
+        final_val = val
+
+    # 4. Pembersihan Akhir & Konversi
+    try:
+        # Jika hasil masih berupa string (misal "Rp 15.000"), bersihkan
+        if isinstance(final_val, str):
+            final_val = final_val.replace(',', '').replace('.', '').replace('Rp', '').strip()
+        
+        # Konversi ke float dulu (aman untuk "15000.0"), lalu ke int
+        return int(float(final_val))
+    except (ValueError, TypeError):
+        return 0
+
+@st.cache_data(ttl=600)
+def load_changes_log(run_id):
+    """Load changes log dari SUPABASE."""
+    if run_id is None or supabase is None: 
+        return pd.DataFrame()
+    
+    try:
+        # Query Supabase
+        response = supabase.table('changes_log')\
+            .select('product_hash, change_type, details_json')\
+            .eq('run_id', run_id)\
+            .in_('change_type', ['new', 'price_update'])\
+            .execute()
+            
+        df_changes = pd.DataFrame(response.data)
+        
+        if df_changes.empty: 
+            return pd.DataFrame()
+        
+        # Terapkan fungsi ekstraksi yang aman
+        df_changes['price_raw_log'] = df_changes['details_json'].apply(safe_extract_price)
+        
+        return df_changes
+    except Exception as e:
+        st.error(f"❌ Error loading changes log from Supabase: {e}")
+        return pd.DataFrame()
+
+# --- Prepare Changes Data (DENGAN PENGECEKAN KOLOM DEFENSIF)
+def prepare_changes_data(df_main, df_changes):
+    if df_changes.empty or df_main.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    # Cek kolom wajib di df_main
+    if 'product_hash' not in df_main.columns:
+        st.error("⚠️ Kolom 'product_hash' hilang dari data utama. Hapus Cache Streamlit & Reload.")
+        return pd.DataFrame(), pd.DataFrame()
+
+    # --- MERGE DATA ---
+    df_merged = pd.merge(
+        df_changes, 
+        df_main[['product_hash', 'product_name', 'price_raw']], 
+        on='product_hash', 
+        how='left'
+    )
+    
+    # Isi NaN pada nama produk
+    df_merged['product_name'] = df_merged['product_name'].fillna("Unknown Product")
+
+    # --- KONVERSI DATA YANG AMAN (ANTI CRASH) ---
+    # Gunakan to_numeric dengan coerce. Jika ada dict/list nyasar, jadi NaN (lalu 0)
+    df_merged['price_raw'] = pd.to_numeric(df_merged['price_raw'], errors='coerce').fillna(0).astype(int)
+    df_merged['price_raw_log'] = pd.to_numeric(df_merged['price_raw_log'], errors='coerce').fillna(0).astype(int)
+
+    # --- PISAHKAN DATA ---
+    df_new = df_merged[df_merged['change_type'] == 'new'].copy()
+    df_price = df_merged[df_merged['change_type'] == 'price_update'].copy()
+    
+    # --- RENAME UNTUK PRODUK BARU ---
+    if not df_new.empty:
+        # Harga produk baru diambil dari current database (price_raw)
+        df_new = df_new.rename(columns={'price_raw': 'Price'})
+
+    # --- RENAME UNTUK PRICE UPDATES ---
+    if not df_price.empty:
+        # Harga Lama diambil dari Log (price_raw_log)
+        # Harga Baru diambil dari Current Database (price_raw)
+        df_price = df_price.rename(columns={
+            'price_raw_log': 'Old Price', 
+            'price_raw': 'New Price'
+        })
+
+    return df_new, df_price
 
 # Load data from Supabase
 df = load_data()
@@ -110,7 +242,10 @@ else:
     st.error("Kolom price_in_millions tidak ditemukan dalam dataset")
     st.stop() # Stop execution if the main price column is missing
 
-# Main title with styling
+# ==============================================================================
+# MAIN DASHBOARD UI
+# ==============================================================================
+
 st.title("🔍 Indonesian Laptop Market Analysis Dashboard")
 st.markdown("---")
 
@@ -173,7 +308,7 @@ if not df.empty:
         filtered_df = filtered_df[filtered_df['gpu_category'] == selected_gpu]
     
     # Add Tab
-    tab1, tab2, tab3, tab4 = st.tabs(["Price Analysis", "Specifications", "Distribution", "Product List"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Price Analysis", "Specifications", "Distribution", "Product List", "What's New?"])
 
     with tab1:
         st.subheader("📈 Laptop Price Distribution by Brand")
@@ -227,59 +362,68 @@ if not df.empty:
 
             # Buat bins dengan ukuran konsisten
             bins = np.arange(min_price, max_price + bin_width, bin_width)
-
-            # Buat labels yang sesuai
             bin_labels = [f'< {bins[1]:.0f}Jt'] + \
-                         [f'{bins[i]:.0f}-{bins[i+1]:.0f}Jt' for i in range(1, len(bins)-2)] + \
-                         [f'> {bins[-2]:.0f}Jt']
+                        [f'{bins[i]:.0f}-{bins[i+1]:.0f}Jt' for i in range(1, len(bins)-2)] + \
+                        [f'> {bins[-2]:.0f}Jt']
 
-            # --- VISUALIZATION REVAMPED ---
-            plt.style.use('seaborn-v0_8-whitegrid')
-            fig, ax = plt.subplots(figsize=(14, 7), facecolor='white')
+            # 2. Setup Visualization Style
+            plt.style.use('seaborn-v0_8-white') # Menggunakan style dasar yang bersih
+            fig, ax = plt.subplots(figsize=(14, 8), facecolor='#FAFAFA') # Background figure sedikit abu-abu sangat muda agar elegan
+            ax.set_facecolor('#FAFAFA') # Background axes sama
 
-            # Buat histogram untuk mendapatkan nilai n (jumlah) dan bin edges
-            n, bins, _ = ax.hist(filtered_df['price_in_millions'], bins=bins, alpha=0) # Sembunyikan plot awal
-            ax.clear() # Hapus histogram tak terlihat
-            ax.grid(False)
+            # Hitung histogram data (tanpa ditampilkan dulu)
+            n, bins, _ = ax.hist(filtered_df['price_in_millions'], bins=bins, alpha=0)
 
-            # Definisikan palet warna gradasi
-            colors = plt.cm.viridis(np.linspace(0.1, 0.85, len(bin_labels)))
+            # 3. Pewarnaan Cerdas (Color Mapping by Height)
+            # Normalisasi data 'n' (jumlah) ke rentang 0-1 untuk colormap
+            norm = mcolors.Normalize(vmin=n.min(), vmax=n.max())
+            cmap = plt.cm.viridis # Pilihan warna: 'viridis', 'magma', 'cividis', 'coolwarm'
+            bar_colors = cmap(norm(n))
 
-            # Buat bar chart manual menggunakan data dari histogram
+            # 4. Plot Bar Chart
             bin_centers = bins[:-1] + np.diff(bins)/2
-            bars = ax.bar(bin_centers, n, width=bin_width*0.8, 
-                          color=colors, alpha=0.9, edgecolor='white', linewidth=2)
+            # zorder=3 memastikan batang berada DI DEPAN garis grid
+            bars = ax.bar(bin_centers, n, width=bin_width*0.75, 
+                        color=bar_colors, edgecolor='white', linewidth=0.5, 
+                        alpha=0.95, zorder=3,
+                        # Menambahkan bayangan halus (opsional/simulasi via alpha)
+                        label='Laptop Count') 
 
-            # Atur Judul dan Label
-            ax.set_title('Distribution of Laptop Prices', fontsize=18, fontweight='bold', pad=25)
-            ax.set_xlabel('Price Range (in Millions Rp)', fontsize=14, labelpad=15)
-            ax.set_ylabel('Number of Products', fontsize=14, labelpad=15)
-
-            # Atur Ticks
-            ax.set_xticks(bin_centers)
-            ax.set_xticklabels(bin_labels, rotation=45, ha="right", fontsize=12)
-            ax.tick_params(axis='y', labelsize=11)
-            ax.tick_params(axis='x', which='major', pad=7)
-
-            # Hapus garis-garis yang tidak perlu (spines)
+            # 5. Styling Grid & Spines (Garis Tepi)
+            ax.grid(axis='y', linestyle='--', alpha=0.4, color='gray', zorder=0) # Grid horizontal halus di belakang
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
-            ax.spines['left'].set_visible(False)
-            ax.spines['bottom'].set_color('lightgray')
+            ax.spines['left'].set_visible(False) # Hilangkan garis kiri
+            ax.spines['bottom'].set_color('#444444')
+            ax.spines['bottom'].set_linewidth(1.2)
 
-            # Tambahkan label di atas bar
+            # Hilangkan tick marks di sumbu Y agar lebih bersih (karena sudah ada label angka di atas batang)
+            ax.tick_params(axis='y', length=0) 
+            ax.tick_params(axis='x', length=5, color='#444444')
+
+            # 6. Judul dan Label Axis
+            ax.set_title('Distribution of Laptop Prices', fontsize=20, fontweight='bold', color='#1A1A1A', pad=30)
+            ax.set_xlabel('Price Range (in Millions Rp)', fontsize=13, labelpad=15, color='#333333', fontweight='medium')
+            ax.set_ylabel('Number of Products', fontsize=13, labelpad=15, color='#333333', fontweight='medium')
+
+            # 7. Atur Label Sumbu X
+            ax.set_xticks(bin_centers)
+            ax.set_xticklabels(bin_labels, ha="center", fontsize=11, color='#333333')
+
+            # 8. Anotasi Angka di Atas Batang
             for bar in bars:
                 height = bar.get_height()
                 if height > 0:
                     ax.annotate(f'{int(height)}',
                                 xy=(bar.get_x() + bar.get_width() / 2, height),
-                                xytext=(0, 5),  # 5 points vertical offset
+                                xytext=(0, 8),  # Jarak teks dari batang
                                 textcoords="offset points",
-                                ha='center', va='bottom', fontsize=11, fontweight='semibold', color='#333')
+                                ha='center', va='bottom', 
+                                fontsize=11, fontweight='bold', color='#2c3e50')
 
-            # Optimalkan layout dan tampilkan
-            plt.tight_layout(pad=2)
-            st.pyplot(fig)  
+            # 9. Tampilkan
+            plt.tight_layout(pad=3)
+            st.pyplot(fig)
 
             # Insight
             # Laptop Price Distribution by Brand
@@ -494,6 +638,99 @@ if not df.empty:
                 width='stretch',
                 height=400
             )
+
+    with tab5: # Jika di st.tabs Anda masih menggunakan `tab5`
+        st.subheader("✨ What's New Today?")
+        # Panggil fungsi baru (mendapatkan ID dan Tanggal)
+        LAST_RUN_ID, LAST_RUN_DATE = get_last_run_info()
+        
+        # Format Tanggal agar enak dibaca (Contoh: 15 December 2025)
+        formatted_date = "Unknown Date"
+        if LAST_RUN_DATE:
+            try:
+                # Mengubah string ISO dari Supabase ke object datetime
+                date_obj = pd.to_datetime(LAST_RUN_DATE)
+                # Format ke string yang rapi (Day Month Year)
+                formatted_date = date_obj.strftime("%d %B %Y")
+            except:
+                formatted_date = LAST_RUN_DATE
+
+        # Tampilkan Caption dengan Tanggal Update
+        st.caption(f"Last Updated: **{formatted_date}**. A quick look at new laptop arrivals and recent price movements.")
+        
+        # LAST_RUN_ID = get_last_run_info()
+        if LAST_RUN_ID is None:
+             st.warning("Meta database not found or is empty.")
+        else:
+            # Load dan proses data
+            df_changes_raw = load_changes_log(LAST_RUN_ID)
+            # Panggil fungsi prepare_changes_data, yang menghasilkan df_new dan df_price
+            df_new_products, df_price_updates = prepare_changes_data(df, df_changes_raw)
+            
+            # --- SECTION 1: PRODUK BARU (New Products) ---
+            st.markdown("### 🔥 New Arrivals")
+            st.caption("Laptops that have just appeared on online stores. Be the first to know!.")
+            
+            if not df_new_products.empty:
+                # 1. Rename Kolom Awal
+                df_new_products = df_new_products.rename(
+                    columns={'product_name': 'Product Name', 'Harga Awal': 'Price'}
+                )
+                
+                # 2. Formatting harga
+                try:
+                    df_new_products['Price'] = df_new_products['Price'].apply(
+                        lambda x: f"Rp {x:,.0f}" if isinstance(x, (int, float)) else x
+                    )
+                except Exception as e:
+                    pass # Biarkan raw jika formatting gagal
+
+                st.success(f"Found **{len(df_new_products)}** new products.")
+                st.dataframe(
+                    df_new_products[['Product Name', 'Price']], 
+                    use_container_width=True,
+                    height=350, 
+                    hide_index=True
+                )
+            else:
+                st.info("No new products were inserted in the last run.")
+
+            st.markdown("---") # Garis pemisah horizontal
+
+            # --- SECTION 2: PERUBAHAN HARGA (Price Updates) ---
+            st.markdown("### 🏷️ Price Updates (Price Watch)")
+            st.caption("Products whose prices have recently changed (up/down). Check if your target got cheaper!.")
+
+            if not df_price_updates.empty:
+                # 1. Rename Kolom Awal
+                df_price_updates = df_price_updates.rename(
+                    columns={'product_name': 'Product Name', 'Harga Lama': 'Old Price', 'Harga Baru': 'New Price'}
+                )
+                st.warning(f"Found **{len(df_price_updates)}** products with price changes.")
+                
+                # 2. Formatting harga
+                try:
+                    df_price_updates['Old Price'] = df_price_updates['Old Price'].apply(
+                        lambda x: f"Rp {x:,.0f}" if isinstance(x, (int, float)) else x
+                    )
+                    df_price_updates['New Price'] = df_price_updates['New Price'].apply(
+                        lambda x: f"Rp {x:,.0f}" if isinstance(x, (int, float)) else x
+                    )
+                except Exception as e:
+                    pass
+
+                st.warning(f"Found **{len(df_price_updates)}** products with price changes.")
+                
+                # Tampilkan tabel
+                st.dataframe(
+                    # Tambahkan 'details_json' ke dalam list kolom yang ditampilkan
+                    df_price_updates[['Product Name', 'Old Price', 'New Price']],
+                    use_container_width=True,
+                    height=350,
+                    hide_index=True
+                )
+            else:
+                st.info("No price changes were detected in the last run.")
 
     # Summary statistics
     st.subheader("📊 Summary Statistics")

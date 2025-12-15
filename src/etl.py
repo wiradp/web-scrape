@@ -298,6 +298,7 @@ def scd2_apply(snapshot: pd.DataFrame,
             stats['discontinued'] += 1
             # also insert into history for archival (copy row with valid_to)
             history_row = dict(row)
+            history_row['product_hash'] = ph
             history_row['valid_to'] = valid_to
             history_row['is_active'] = 0
             # remove product_id to avoid conflicts
@@ -413,6 +414,7 @@ def scd2_apply(snapshot: pd.DataFrame,
                 # Also copy previous version into history with its valid_to (if not already copied)
                 # We can copy by selecting from current history prior to update — but to keep simple, insert an archival row:
                 history_row = dict(cur_row)
+                history_row['product_hash'] = ph
                 history_row.pop('product_id', None)
                 history_row['valid_to'] = run_at
                 history_row['is_active'] = 0

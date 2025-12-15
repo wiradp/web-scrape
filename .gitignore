@@ -20,6 +20,7 @@ env.bak/
 .ipynb_checkpoints/
 *.nbconvert.ipynb
 
+
 # ===================================
 # 💾 Data (Ignore content, keep folder structure)
 # ===================================
@@ -123,5 +124,6 @@ src/indexer.py
 src/query_rewriter.py
 src/analisis.py
 src/etl_old.py
+src/export_db_to_csv.py
 
 

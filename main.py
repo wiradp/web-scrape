@@ -30,8 +30,6 @@ logger = setup_logger("pipeline")
 PIPELINE_CONFIG = {
     "raw_db": "data/database/raw/laptops_data_raw.db",
     "current_db": "data/database/current/laptops_current.db",
-    "history_db": "data/database/history/laptops_history.db",
-    "meta_db": "data/database/meta/laptops_meta.db",
     "csv_export": "data/csv/laptops_current_export.csv",
 }
 
@@ -68,16 +66,10 @@ def verify_step_prerequisites(step_num: int) -> bool:
 def run_step(step_num: int, step_name: str, command: list, check_prerequisites: bool = True):
     """
     Run a pipeline step dengan timing dan error handling.
-    
-    Args:
-        step_num: Nomor step (1-4)
-        step_name: Nama deskriptif step
-        command: Command untuk dijalankan
-        check_prerequisites: Apakah check file prerequisites sebelum run
     """
     logger.info(f"")
     logger.info(f"{'='*60}")
-    logger.info(f"STEP {step_num}/4: {step_name}")
+    logger.info(f"STEP {step_num}: {step_name}")
     logger.info(f"{'='*60}")
     
     # Verifikasi prerequisites
@@ -86,13 +78,16 @@ def run_step(step_num: int, step_name: str, command: list, check_prerequisites: 
     
     try:
         start_time = time.time()
-        logger.info(f"Command: python {' '.join(command)}")
-        logger.info(f"Start time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
+        # Menambahkan '-u' agar output python unbuffered (muncul real-time di log/terminal)
+        full_command = [sys.executable, "-u"] + command
         
-        result = subprocess.run(
-            [sys.executable] + command,
+        logger.info(f"Command: {' '.join(full_command)}")
+        
+        # subprocess.run akan menunggu hingga script selesai
+        subprocess.run(
+            full_command,
             check=True,
-            capture_output=False,
+            capture_output=False, # False agar output langsung tampil di console induk
             cwd=os.path.dirname(os.path.abspath(__file__))
         )
         
@@ -101,14 +96,11 @@ def run_step(step_num: int, step_name: str, command: list, check_prerequisites: 
         return True
         
     except subprocess.CalledProcessError as e:
-        elapsed = time.time() - start_time
-        logger.error(f"❌ STEP {step_num} FAILED (failed after {elapsed:.2f}s)")
-        logger.exception(f"Error details: {e}")
+        logger.error(f"❌ STEP {step_num} FAILED (Process returned error code {e.returncode})")
         raise RuntimeError(f"Pipeline failed at step {step_num}: {step_name}")
     except Exception as e:
-        elapsed = time.time() - start_time
-        logger.error(f"❌ STEP {step_num} FAILED (unexpected error after {elapsed:.2f}s)")
-        logger.exception(f"Unexpected error: {e}")
+        logger.error(f"❌ STEP {step_num} FAILED (Unexpected error)")
+        logger.exception(e)
         raise
 
 def print_pipeline_summary(success: bool, elapsed_total: float):
@@ -122,22 +114,17 @@ def print_pipeline_summary(success: bool, elapsed_total: float):
         logger.info(f"✅ STATUS: COMPLETED SUCCESSFULLY")
         logger.info(f"⏱️  TOTAL TIME: {elapsed_total:.2f}s")
         logger.info(f"")
-        logger.info(f"📊 GENERATED OUTPUTS:")
-        logger.info(f"   • Raw DB: {PIPELINE_CONFIG['raw_db']}")
-        logger.info(f"   • Current DB: {PIPELINE_CONFIG['current_db']}")
-        logger.info(f"   • History DB: {PIPELINE_CONFIG['history_db']}")
-        logger.info(f"   • Meta DB: {PIPELINE_CONFIG['meta_db']}")
-        logger.info(f"   • CSV Export: {PIPELINE_CONFIG['csv_export']}")
-        logger.info(f"   • Logs: logs/pipeline.log")
+        logger.info(f"📊 FLOW COMPLETED:")
+        logger.info(f"   1. Scraper  [DONE]")
+        logger.info(f"   2. ETL      [DONE]")
+        logger.info(f"   3. Export   [DONE]")
+        logger.info(f"   4. Seeder   [DONE] (Data synced to Supabase)")
         logger.info(f"")
-        logger.info(f"🎯 NEXT STEPS:")
-        logger.info(f"   1. Review logs in 'logs/pipeline.log'")
-        logger.info(f"   2. Check Supabase 'products_current' table for data")
-        logger.info(f"   3. Run dashboard.py to visualize results")
+        logger.info(f"🎯 DASHBOARD READY: Run 'streamlit run dashboard.py'")
     else:
         logger.error(f"❌ STATUS: FAILED")
         logger.error(f"⏱️  TIME ELAPSED: {elapsed_total:.2f}s")
-        logger.error(f"📋 Please check logs above for details")
+        logger.error(f"📋 Check logs above for the point of failure.")
     
     logger.info(f"{'#'*60}")
     logger.info(f"")
@@ -150,32 +137,28 @@ if __name__ == "__main__":
     logger.info("###############################################")
     logger.info("###  LAPTOP MARKETPLACE ETL PIPELINE START  ###")
     logger.info("###############################################")
-    logger.info(f"Pipeline Start: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(pipeline_start))}")
-    logger.info("")
     
     try:
         # Pre-flight checks
-        logger.info("🔧 RUNNING PRE-FLIGHT CHECKS...")
         ensure_directories()
-        logger.info("")
         
         # STAGE 1: SCRAPER
         run_step(
             step_num=1,
-            step_name="Scraper: Fetch Raw Laptop Data from Viraindo.com",
+            step_name="Scraper: Fetch Raw Laptop Data",
             command=["src/scraper.py"],
             check_prerequisites=False
         )
 
-        # STAGE 2: ETL (with Feature Extraction + SCD-2)
+        # STAGE 2: ETL
         run_step(
             step_num=2,
-            step_name="ETL: Feature Extraction & SCD-2 Processing",
+            step_name="ETL: Feature Extraction & SCD-2",
             command=["src/etl.py"],
             check_prerequisites=True
         )
 
-        # STAGE 3: EXPORT to CSV
+        # STAGE 3: EXPORT
         run_step(
             step_num=3,
             step_name="Export: Current DB → CSV",
@@ -183,35 +166,19 @@ if __name__ == "__main__":
             check_prerequisites=True
         )
 
-        # STAGE 4: SEED to SUPABASE
+        # STAGE 4: SEEDER
         run_step(
             step_num=4,
-            step_name="Seeder: CSV → Supabase PostgreSQL",
+            step_name="Seeder: CSV → Supabase (Data Sync)",
             command=["src/seeder.py"],
             check_prerequisites=True
         )
 
-        # Pipeline completed successfully
+        # Finish
         pipeline_end = time.time()
-        total_elapsed = pipeline_end - pipeline_start
-        print_pipeline_summary(success=True, elapsed_total=total_elapsed)
-        logger.info("###############################################")
-        logger.info("###  PIPELINE EXECUTION COMPLETED SUCCESSFULLY ###")
-        logger.info("###############################################\n")
+        print_pipeline_summary(success=True, elapsed_total=pipeline_end - pipeline_start)
 
     except Exception as e:
         pipeline_end = time.time()
-        total_elapsed = pipeline_end - pipeline_start
-        
-        logger.error("")
-        logger.error("=" * 60)
-        logger.error("❌ PIPELINE EXECUTION FAILED")
-        logger.error("=" * 60)
-        logger.exception(f"Root cause: {e}")
-        
-        print_pipeline_summary(success=False, elapsed_total=total_elapsed)
-        logger.error("###############################################")
-        logger.error("###  PIPELINE EXECUTION FAILED  ###")
-        logger.error("###############################################\n")
-        
+        print_pipeline_summary(success=False, elapsed_total=pipeline_end - pipeline_start)
         sys.exit(1)
