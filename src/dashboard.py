@@ -719,8 +719,6 @@ if not df.empty:
                 except Exception as e:
                     pass
 
-                st.warning(f"Found **{len(df_price_updates)}** products with price changes.")
-                
                 # Tampilkan tabel
                 st.dataframe(
                     # Tambahkan 'details_json' ke dalam list kolom yang ditampilkan
