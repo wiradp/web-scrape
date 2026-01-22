@@ -1,0 +1,19 @@
+name: Supabase Keep Alive
+
+on:
+  schedule:
+    # Berjalan otomatis setiap 6 hari jam 00:00 UTC
+    - cron: '0 0 */6 * *'
+  workflow_dispatch: # Fitur untuk menjalankan manual kapan saja
+
+jobs:
+  ping_supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch 1 Row from Scraping Table
+        run: |
+          # Perintah ini akan memanggil API Supabase untuk mengambil 1 baris data
+          # Ganti 'hasil_scraping' jika nama tabel Anda berbeda
+          curl -i -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/products_current?select=id&limit=1" \
+          -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
