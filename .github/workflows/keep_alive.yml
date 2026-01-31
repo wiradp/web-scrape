@@ -1,19 +1,20 @@
-name: Supabase Keep Alive
+name: Supabase Keep Alive (Force Activity)
 
 on:
   schedule:
     # Berjalan otomatis setiap 6 hari jam 00:00 UTC
     - cron: '0 0 */6 * *'
-  workflow_dispatch: # Fitur untuk menjalankan manual kapan saja
+  workflow_dispatch: # Agar bisa dites manual
 
 jobs:
-  ping_supabase:
+  force_activity:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch 1 Row from Scraping Table
+      - name: Update Health Check Table
         run: |
-          # Perintah ini akan memanggil API Supabase untuk mengambil 1 baris data
-          # Ganti 'hasil_scraping' jika nama tabel Anda berbeda
-          curl -i -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/products_current?select=id&limit=1" \
+          # Mengupdate kolom last_ping dengan waktu sekarang (now)
+          curl -i -X PATCH "${{ secrets.SUPABASE_URL }}/rest/v1/health_check?id=eq.1" \
           -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+          -H "Content-Type: application/json" \
+          -d '{ "last_ping": "now()" }'
