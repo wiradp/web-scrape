@@ -2,19 +2,25 @@ name: Supabase Keep Alive (Force Activity)
 
 on:
   schedule:
-    # Berjalan otomatis setiap 6 hari jam 00:00 UTC
-    - cron: '0 0 */6 * *'
-  workflow_dispatch: # Agar bisa dites manual
+    # Direvisi jadi setiap 3 hari untuk memastikan tidak pernah menyentuh batas 7 hari
+    - cron: '0 0 */3 * *'
+  workflow_dispatch: 
 
 jobs:
   force_activity:
     runs-on: ubuntu-latest
     steps:
-      - name: Update Health Check Table
+      - name: Update Health Check (Write Activity)
         run: |
-          # Mengupdate kolom last_ping dengan waktu sekarang (now)
           curl -i -X PATCH "${{ secrets.SUPABASE_URL }}/rest/v1/health_check?id=eq.1" \
           -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
           -H "Content-Type: application/json" \
           -d '{ "last_ping": "now()" }'
+
+      - name: Verify Health Check (Read Activity)
+        # Menambahkan langkah pembacaan agar interaksi ke database lebih lengkap
+        run: |
+          curl -i -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/health_check?id=eq.1" \
+          -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
