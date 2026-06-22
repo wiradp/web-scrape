@@ -53,7 +53,7 @@ graph TD
 
 Below is the live tracking interface built to filter market noise and pinpoint high-value laptop deals based on calculated price-to-performance metrics.
 
-![Streamlit Laptop Tracker Dashboard](https://via.placeholder.com/800x450.png?text=Tempatkan+Screenshot+Dashboard+Streamlit+Anda+Disini)
+![Streamlit Laptop Tracker Dashboard](assets/dashboard-web-scrape.png)
 
 ---
 
