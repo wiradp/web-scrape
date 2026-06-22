@@ -1,83 +1,133 @@
-# 💻 Laptop Market Analytics — Automated Data Pipeline
+# 💻 Engineering an Automated Data Pipeline to Track Laptop Prices and Market Changes
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/wira-dhana-putra/)
+[![Medium](https://img.shields.io/badge/Medium-12100E?style=for-the-badge&logo=medium&logoColor=white)](https://medium.com/@wiradp)
+[![Website](https://img.shields.io/badge/Website-000000?style=for-the-badge&logo=github&logoColor=white)](https://wiradp.github.io/)
+
+An end-to-end data engineering and analytics pipeline built to transform chaotic e-commerce product listings into structured, historical market insights. This system automates data collection, standardizes messy text specifications, tracks price fluctuations over time, and delivers clear metrics via an interactive dashboard.
 
 ---
 
-## 🌍 What is this?
-We're working on an automated system designed to track laptop prices across Indonesia. It pulls data from online marketplaces, cleans it up, and presents it on a public dashboard for everyone to see.
+## 📌 Project Overview & Context
 
-This system is more advanced than simple scrapers because it remembers history. When a laptop's price changes today, it saves the old price instead of deleting it. This feature enables users to see price trends and quickly identify new product arrivals.
+Buying a laptop online can be overwhelming—prices fluctuate daily, and crucial specifications (CPU, RAM, GPU) are often buried inside messy, unstructured text descriptions. 
 
----
+Unlike standard data science tutorials that rely on static, clean CSV files, this project tackles **real-world data engineering challenges**. It builds a scalable market intelligence tool that tracks how prices *actually* change over time, empowering non-technical consumers to score the best deals within their budget.
 
-## 🚀 Key Features (What's Done)
-**1. Smart Data Collection**
-- **Automated Scraping:** Collects thousands of laptop data points automatically.
-- **Data Cleaning:** Converts messy text (e.g., "16gb ddr4") into clean data columns (RAM: 16 GB).
-
-**2. Historical Tracking (SCD Type 2)**
-- **Price History:** If a price changes, the old data is archived, not deleted.
-- **Change Logging:** The system records exactly when a price changed or when a new product was added.
-
-**3. Hybrid Database System**
-- **Local Processing:** Uses **SQLite** for fast, safe data processing on the local machine.
-- **Cloud Sync:** Automatically syncs clean data to **Supabase (PostgreSQL)** so the public dashboard is always up-to-date.
-
-**4. Interactive Dashboard**
-- **"What's New" Tab:** A special feature that shows New Arrivals and Price Drops/Hikes from the latest update.
-- **Filters:** Filter by Brand, RAM, Processor, and GPU.
-- **Analytics:** Visualizes price distributions and spec trends.
+> 🛠️ **Hardware Constraints Note:** This entire end-to-end pipeline, database integration, and dashboard tracking system were developed and tested using a legacy **Acer Core i5 laptop from 2012**. Proof that impactful data infrastructure can be built under strict physical hardware limitations through optimized and efficient code.
 
 ---
 
-## 🏗️ Architecture: How it Works
-The system runs on a pipeline called `run_pipeline.sh` which executes these steps in order:
+## 🏗️ System Architecture & Data Flow
 
-1. `scraper.py` Visits the website and downloads raw data into a local database.
-2. `etl.py` **(Extract, Transform, Load)** * Cleans the raw data.
-    - Extracts specs (Brand, CPU, GPU).
-    - Compares new data vs. old data to detect price changes.
-5. `seeder.py` Uploads the processed data from the Local Database to the **Supabase Cloud**.
-6. `dashboard.py` The user interface (built with Streamlit) fetches data from Supabase and displays it to the user.
+The pipeline automatically orchestrates data from live web structures down to a cloud-hosted analytical layer, visualization, and deployment.
+
+```mermaid
+graph TD
+    A[E-Commerce Website] -->|Raw HTML Data| B[Python Web Scraper]
+    B -->|Unstructured Text| C[Data Transformation & Cleaning]
+    C -->|Regex Spec Extraction| D[Feature Engineering & Schema Standardization]
+    D -->|Structured Data| E[(Supabase Cloud Database)]
+    E -->|Historical & Live Queries| F[Streamlit Interactive Dashboard]
+    
+    subgraph Automation Layer
+        G[Workflow Scheduler / GitHub Actions / Cron] -->|Trigger Schedule| B
+    end
+    
+    style E fill:#3ecf8e,stroke:#333,stroke-width:2px,color:#fff
+    style F fill:#ff4b4b,stroke:#333,stroke-width:2px,color:#fff
+
+    Pilihan yang sangat tepat, Wira. Kita fokus selesaikan proyek **Laptop Price Pipeline** ini dulu sampai tuntas dan estetik. Proyek ini punya nilai jual yang sangat tinggi untuk kompetisi ini karena relevan dengan sponsor (Enter Komputer).
+
+Berdasarkan artikel Medium Anda di Google Drive, saya melihat proyek ini menggunakan arsitektur modern: *Scraping* data mentah, pembersihan string spesifikasi (CPU, RAM, GPU) yang berantakan menggunakan Python/Pandas, penyimpanan data historis ke *cloud database* Supabase, otomatisasi berkala (*workflow automation* seperti Cron/GitHub Actions), hingga visualisasi interaktif di Streamlit.
+
+Berikut adalah draf kode `README.md` siap pakai. Di dalamnya sudah saya tanamkan **Diagram Arsitektur berbasis Mermaid** (otomatis jadi grafik bagus di GitHub) dan **placeholder gambar** untuk screenshot dashboard Anda.
+
+Anda tinggal menyalin (*copy*) seluruh kode di dalam kotak di bawah ini dan menempelkannya (*paste*) ke file `README.md` di repositori GitHub Anda:
+
+```markdown
+# 💻 Engineering an Automated Data Pipeline to Track Laptop Prices and Market Changes
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/wira-dhana-putra/)
+[![Medium](https://img.shields.io/badge/Medium-12100E?style=for-the-badge&logo=medium&logoColor=white)](https://medium.com/@wiradp)
+[![Website](https://img.shields.io/badge/Website-000000?style=for-the-badge&logo=github&logoColor=white)](https://wiradp.github.io/)
+
+An end-to-end data engineering and analytics pipeline built to transform chaotic e-commerce product listings into structured, historical market insights. This system automates data collection, standardizes messy text specifications, tracks price fluctuations over time, and delivers clear metrics via an interactive dashboard.
 
 ---
 
-## 🛠️ Tech Stack
-- **Language**: Python 🐍
-- **Automation**: Bash Script & Cron Job
-- **Data Processing**: Pandas, NumPy
-- **Database**: SQLite (Local) & Supabase (Cloud/PostgreSQL)
-- **Visualization**: Streamlit, Plotly, Matplotlib
+## 📌 Project Overview & Context
+
+Buying a laptop online can be overwhelming—prices fluctuate daily, and crucial specifications (CPU, RAM, GPU) are often buried inside messy, unstructured text descriptions. 
+
+Unlike standard data science tutorials that rely on static, clean CSV files, this project tackles **real-world data engineering challenges**. It builds a scalable market intelligence tool that tracks how prices *actually* change over time, empowering non-technical consumers to score the best deals within their budget.
+
+> 🛠️ **Hardware Constraints Note:** This entire end-to-end pipeline, database integration, and dashboard tracking system were developed and tested using a legacy **Acer Core i5 laptop from 2012**. Proof that impactful data infrastructure can be built under strict physical hardware limitations through optimized and efficient code.
 
 ---
 
-## 🔮 Future Roadmap
-- 🧠 **AI Semantic Search:** "Find me a cheap laptop for video editing" (Using Vector Embeddings).
-- 📆 **Price Forecasting:** Predict when prices might drop using Machine Learning.
-- 🔔 **Email Alerts:** Notify users when their favorite laptop gets a discount.
+## 🏗️ System Architecture & Data Flow
 
----
+The pipeline automatically orchestrates data from live web structures down to a cloud-hosted analytical layer, visualization, and deployment.
 
-## 📂 Project Structure
+```mermaid
+graph TD
+    A[E-Commerce Website] -->|Raw HTML Data| B[Python Web Scraper]
+    B -->|Unstructured Text| C[Data Transformation & Cleaning]
+    C -->|Regex Spec Extraction| D[Feature Engineering & Schema Standardization]
+    D -->|Structured Data| E[(Supabase Cloud Database)]
+    E -->|Historical & Live Queries| F[Streamlit Interactive Dashboard]
+    
+    subgraph Automation Layer
+        G[Workflow Scheduler / GitHub Actions / Cron] -->|Trigger Schedule| B
+    end
+    
+    style E fill:#3ecf8e,stroke:#333,stroke-width:2px,color:#fff
+    style F fill:#ff4b4b,stroke:#333,stroke-width:2px,color:#fff
 
 ```
-├── data/               # Local database storage
-├── logs/               # Automation logs
-├── src/
-│   ├── scraper.py      # Grabs data from web
-│   ├── etl.py          # Cleans & processes history
-│   ├── seeder.py       # Syncs local DB to Cloud
-│   ├── dashboard.py    # The Streamlit App
-│   └── ...
-├── run_pipeline.sh     # Main automation script
-└── requirements.txt    # Python dependencies
-```
+
+### Key Stages Breakdown:
+
+1. **Automated Data Collection:** Eliminates manual price checks by programmatically extraction laptop listings.
+2. **Advanced Feature Engineering:** Uses custom parsing logic to isolate messy text strings into explicit categorical components (e.g., extracting `8GB` to `RAM_Size_GB`, `i7-12700H` to `CPU_Series`).
+3. **Cloud Data Warehousing:** Stores processed data in **Supabase (PostgreSQL)** to capture historical pricing trends instead of just snapshot data.
+4. **Data Democratization:** Exposes market dynamics to end-users via an interactive web interface.
 
 ---
 
-**Author**: [Wira Dhana Putra](https://wiradp.github.io)
+## 📊 Dashboard Preview
 
-**Status**: Live Production 🚀
+Below is the live tracking interface built to filter market noise and pinpoint high-value laptop deals based on calculated price-to-performance metrics.
 
-**Live Demo**: [Click Here to View Dashboard](https://web-scrape-dashboard.streamlit.app/)
+---
 
-_Created with ❤️ by Wira_
+## 🛠️ Tech Stack & Tools
+
+* **Language:** Python
+* **Data Libraries:** Pandas, NumPy, Beautiful Soup / Scrapy
+* **Database & Cloud:** Supabase (Cloud PostgreSQL)
+* **Automation:** Workflow Schedulers / Cron Job Infrastructure
+* **Visualization:** Streamlit Framework
+* **Development Environment:** Linux (Zorin OS)
+
+---
+
+## 🚀 Key Insights Delivered
+
+* **Price History Tracking:** Identifies true discounts vs. artificial price hikes by analyzing historical pricing curves.
+* **Specification Standardization:** Simplifies cross-brand comparison (Asus, Lenovo, Acer, HP) by uniforming hardware specs.
+* **Market Dynamics Monitoring:** Tracks which price tiers fluctuate the most in response to market demands.
+
+---
+
+## 📬 Connect with Me
+
+If you have any questions about the data schema, pipeline orchestration, or want to discuss Data Engineering & AI solutions, feel free to reach out!
+
+* **LinkedIn:** [wira-dhana-putra](https://www.linkedin.com/in/wira-dhana-putra/)
+* **Medium Articles:** [@wiradp](https://medium.com/@wiradp)
+* **Portfolio Website:** [wiradp.github.io](https://wiradp.github.io/)
+* **GitHub Profile:** [@wiradp](https://github.com/wiradp)
+
+```
